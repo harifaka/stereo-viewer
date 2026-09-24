@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  stereo_app:
+    build: .
+    ports:
+      - "5000:5000"
+    devices:
+      - "/dev/video0:/dev/video0"
+      - "/dev/video1:/dev/video1"
+    privileged: true
+    environment:
+      - FLASK_ENV=development
