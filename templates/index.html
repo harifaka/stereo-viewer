@@ -156,18 +156,13 @@
 
         function fillCameraLists(devices) {
             const cameras = devices.filter(device => device.kind === 'videoinput');
-            const labels = new Map();
-            cameras.forEach((camera, index) => {
-                const label = camera.label || `Camera ${index + 1}`;
-                labels.set(label, (labels.get(label) || 0) + 1);
-            });
             for (const [select, preferredIndex] of [[leftCamera, 0], [rightCamera, 1]]) {
                 select.replaceChildren();
                 cameras.forEach((camera, index) => {
                     const option = document.createElement('option');
                     option.value = camera.deviceId;
                     const label = camera.label || `Camera ${index + 1}`;
-                    option.textContent = labels.get(label) > 1 ? `${label} (${index + 1})` : label;
+                    option.textContent = `Camera ${index + 1} - ${label}`;
                     select.append(option);
                 });
                 if (cameras.length) select.selectedIndex = Math.min(preferredIndex, cameras.length - 1);

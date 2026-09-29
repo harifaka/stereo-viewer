@@ -1,18 +1,17 @@
 # Stereo Vision & Multi-Sensor Fusion Project Roadmap
 
-This document outlines the complete development roadmap for building a scalable, Dockerized stereoscopic vision and multi-sensor fusion application using Python, OpenCV, and Flask.
+This document outlines the development roadmap for a Dockerized stereoscopic vision and multi-sensor fusion application using Python, OpenCV, and Flask. In the current design, the browser captures host webcams and sends frames to Flask; the container does not capture USB devices directly.
 
 ## Phase 1: Foundation & Core Stereo Vision (V1 & V2)
 **Goal:** Establish a stable, containerized environment capable of handling two identical webcams without USB bandwidth crashing, providing a modern web interface for live depth perception.
 
-- [ ] **Infrastructure & Docker Setup**
-  - Create `Dockerfile` (Python 3.9+ slim, installing OpenCV dependencies like `libgl1-mesa-glx`, `v4l-utils`).
-  - Create `docker-compose.yml` with device passthrough (`/dev/video0`, `/dev/video1`) and privileged mode.
-  - Document Windows USB passthrough (`usbipd-win`) instructions.
-- [ ] **Flask Backend & Camera Handling**
-  - Implement dual camera capture using `cv2.CAP_V4L2` backend (Linux/Docker stability).
-  - Force `MJPG` compression format (`cv2.CAP_PROP_FOURCC`) to prevent USB bandwidth bottlenecks.
-  - Implement robust error handling (yield a "CAMERA ERROR" placeholder image if a stream drops).
+- [x] **Infrastructure & Docker Setup**
+  - Run Flask in Docker without camera-device passthrough; browser camera capture works with Docker Desktop on Windows and macOS.
+  - Document that Windows `usbipd-win` passthrough is not required for browser-based capture.
+- [x] **Browser Camera Capture & Frame Handling**
+  - Enumerate two cameras independently and open each by its browser `deviceId`, including identical webcam models.
+  - Send captured frames to Flask for disparity processing, keeping host camera access outside the container.
+  - Keep direct V4L2/container camera capture as a separate future option if needed; it is not part of this setup.
 - [ ] **Stereo BM/SGBM Algorithm**
   - Convert frames to grayscale.
   - Implement `cv2.StereoBM_create` or `cv2.StereoSGBM_create`.
