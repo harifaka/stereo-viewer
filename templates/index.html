@@ -96,6 +96,22 @@
         .settings-grid select { width: 100%; max-width: none; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 15px; border-top: 1px solid var(--line); }
         .settings-error { min-height: 18px; margin: 0; color: var(--danger); font-size: 12px; }
+        #hardwareSettings { z-index: 2; width: min(820px, calc(100vw - 28px)); max-height: min(86vh, 760px); }
+        .hardware-content { display: grid; gap: 18px; padding: 20px 0; }
+        .hardware-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+        .hardware-toolbar label, .hardware-readout { display: grid; min-width: 0; gap: 7px; color: var(--muted); font-size: 11px; }
+        .hardware-toolbar select { width: 100%; max-width: none; }
+        .hardware-id { overflow-wrap: anywhere; color: var(--text); font: 10px/1.5 ui-monospace, Consolas, monospace; }
+        .hardware-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+        .hardware-setting { display: grid; min-width: 0; gap: 8px; }
+        .hardware-setting > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; }
+        .hardware-setting output { color: var(--accent); font-variant-numeric: tabular-nums; }
+        .hardware-setting input[type="number"], .hardware-setting select { width: 100%; max-width: none; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171b18; }
+        .hardware-setting input[type="range"] { width: 100%; accent-color: var(--accent); }
+        .hardware-setting input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+        .hardware-status { min-height: 18px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+        .hardware-status[data-state="error"] { color: var(--danger); }
+        .hardware-status[data-state="live"] { color: var(--accent); }
         .preview-panel { min-width: 0; border: 1px solid var(--line); border-radius: 4px; background: #171b18; }
         .preview-heading { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line); }
         .preview-heading strong { font-size: 12px; }
@@ -150,6 +166,7 @@
             .settings-grid { grid-template-columns: 1fr; gap: 16px; }
             .settings-layout { grid-template-columns: 1fr; gap: 18px; }
             .settings-grid { padding: 0; }
+            .hardware-toolbar, .hardware-grid { grid-template-columns: 1fr; }
             .preview-view { aspect-ratio: 16 / 10; }
             .calibration-monitor { grid-template-columns: 1fr; }
             .calibration-hint-row { align-items: flex-start; flex-direction: column; }
@@ -208,7 +225,7 @@
         <form class="settings-form" id="settingsForm">
             <div class="settings-heading">
                 <div class="settings-heading-copy"><div class="section-kicker" data-i18n="stereoMatching">Stereo matching</div><h3 id="settingsTitle" data-i18n="detailedSettings">Detailed settings</h3><p class="settings-intro" data-i18n="settingsIntro">Tune how matching finds corresponding image details. Use the preview to compare changes; Apply saves them, while Cancel discards the draft.</p></div>
-                <div class="actions"><button class="action-button" id="openCameraCalibration" type="button" data-i18n="cameraCalibration">Camera calibration</button><button class="action-button" id="closeSettings" type="button" data-i18n="close">Close</button></div>
+                <div class="actions"><button class="action-button" id="openHardwareSettings" type="button" data-i18n="cameraHardware">Camera hardware</button><button class="action-button" id="openCameraCalibration" type="button" data-i18n="cameraCalibration">Camera calibration</button><button class="action-button" id="closeSettings" type="button" data-i18n="close">Close</button></div>
             </div>
             <div class="settings-layout">
                 <div class="settings-grid">
@@ -235,6 +252,24 @@
                 <button class="action-button primary" id="applySettings" type="submit" data-i18n="applySettings">Apply settings</button>
             </div>
         </form>
+        <dialog id="hardwareSettings" aria-labelledby="hardwareSettingsTitle">
+            <form class="settings-form" id="hardwareSettingsForm">
+                <div class="settings-heading">
+                    <div class="settings-heading-copy"><div class="section-kicker" data-i18n="deviceControls">Device controls</div><h3 id="hardwareSettingsTitle" data-i18n="cameraHardware">Camera hardware</h3><p class="settings-intro" data-i18n="hardwareIntro">Controls are discovered from the selected camera. Changes apply to that camera immediately.</p></div>
+                    <button class="action-button" id="closeHardwareSettings" type="button" data-i18n="close">Close</button>
+                </div>
+                <div class="hardware-content">
+                    <div class="hardware-toolbar">
+                        <label><span data-i18n="cameraSide">Camera input</span><select id="hardwareSide"><option value="left" data-i18n="leftCameraLabel">Left camera</option><option value="right" data-i18n="rightCameraLabel">Right camera</option></select></label>
+                        <label><span data-i18n="hardwareDevice">Camera device</span><select id="hardwareDevice"></select></label>
+                    </div>
+                    <div class="hardware-readout"><span data-i18n="browserDeviceId">Browser device ID</span><code class="hardware-id" id="hardwareDeviceId">-</code></div>
+                    <div class="hardware-grid" id="hardwareControls"></div>
+                    <p class="hardware-status" id="hardwareStatus" role="status" aria-live="polite"></p>
+                </div>
+                <div class="modal-actions"><button class="action-button" id="resetHardwareSettings" type="button" data-i18n="resetDeviceControls">Reset device controls</button><button class="action-button primary" id="doneHardwareSettings" type="button" data-i18n="done">Done</button></div>
+            </form>
+        </dialog>
     </dialog>
     <dialog id="cameraCalibration" aria-labelledby="calibrationTitle">
         <form class="settings-form" id="calibrationForm">
@@ -274,6 +309,7 @@
         const toggleCapture = document.getElementById('toggleCapture');
         const refreshCameraList = document.getElementById('refreshCameraList');
         const advancedSettings = document.getElementById('advancedSettings');
+        const hardwareSettings = document.getElementById('hardwareSettings');
         const openSettings = document.getElementById('openSettings');
         const depthImage = document.getElementById('depthImage');
         const depthPlaceholder = document.getElementById('depthPlaceholder');
@@ -332,6 +368,8 @@
             secureContext: ['Camera capture requires a secure browser context. Open this app at localhost or over HTTPS.', 'A kamerahasználathoz biztonságos böngészőkörnyezet szükséges. Nyisd meg az alkalmazást localhoston vagy HTTPS-en.'], openFullscreenError: ['Could not open full screen: {message}', 'Nem sikerült megnyitni a teljes képernyőt: {message}'],
             cameraUnavailable: ['Camera unavailable', 'A kamera nem érhető el'], cameraAccessUnavailable: ['Camera access unavailable', 'A kamera-hozzáférés nem érhető el'], cameraOrProcessingError: ['Camera or processing error', 'Kamera- vagy feldolgozási hiba'], processingFailed: ['Depth processing failed.', 'A mélységfeldolgozás nem sikerült.'],
             loadSettingsError: ['Could not load the active stereo settings.', 'Nem sikerült betölteni az aktív sztereó beállításokat.'], updateSettingsError: ['Could not update the stereo settings.', 'Nem sikerült frissíteni a sztereó beállításokat.'], previewError: ['Preview failed: {message}', 'Az előnézet nem sikerült: {message}'],
+            cameraHardware: ['Camera hardware', 'Kamera hardver'], deviceControls: ['Device controls', 'Eszközvezérlők'], hardwareIntro: ['Controls are discovered from the selected camera. Changes apply to that camera immediately.', 'A vezérlőket a kiválasztott kamera képességei alapján jelenítjük meg. A módosítások azonnal érvénybe lépnek.'], cameraSide: ['Camera input', 'Kamerabemenet'], hardwareDevice: ['Camera device', 'Kameraeszköz'], browserDeviceId: ['Browser device ID', 'Böngészőbeli eszközazonosító'], resetDeviceControls: ['Reset device controls', 'Eszközvezérlők visszaállítása'],
+            hardwareConnectFirst: ['Connect both cameras to inspect and adjust their hardware controls.', 'Csatlakoztasd mindkét kamerát a hardvervezérlők megtekintéséhez és módosításához.'], hardwareUnsupported: ['This camera does not expose adjustable controls to the browser.', 'Ez a kamera nem tesz elérhetővé módosítható vezérlőket a böngésző számára.'], hardwareControlApplied: ['Camera setting applied.', 'Kamerabeállítás alkalmazva.'], hardwareControlError: ['Could not apply this camera setting: {message}', 'Nem sikerült alkalmazni a kamerabeállítást: {message}'], hardwareResetDone: ['Camera controls reset to browser defaults.', 'A kamera vezérlői visszaálltak a böngésző alapértékeire.'], hardwareResetError: ['Could not reset camera controls: {message}', 'Nem sikerült visszaállítani a kamera vezérlőit: {message}'], hardwareNoDevices: ['No camera devices are available.', 'Nem érhetők el kameraeszközök.'], hardwareSameDevice: ['Choose a different camera for each stereo input.', 'A két sztereó bemenethez külön kamerát válassz.'], hardwareSwitched: ['Camera device changed.', 'A kameraeszköz megváltozott.'], hardwareSwitchError: ['Could not switch camera: {message}', 'Nem sikerült kamerát váltani: {message}'], hardwareSwitchWhileOff: ['Device selection is available now. Connect the cameras to inspect hardware controls.', 'Az eszköz most kiválasztható. Csatlakoztasd a kamerákat a hardvervezérlők megtekintéséhez.'], hardwareNoValues: ['No current value', 'Nincs aktuális érték'], hardwareLoading: ['Loading camera capabilities…', 'Kamera képességeinek betöltése…'], hardwareModeAuto: ['Automatic', 'Automatikus'], hardwareModeManual: ['Manual', 'Kézi'], hardwareResetConfirm: ['Reset all adjustable controls on this camera to browser defaults?', 'Visszaállítod a kamera összes módosítható vezérlőjét a böngésző alapértékeire?'],
             invalidCameraFrames: ['Upload a valid image from each camera.', 'Tölts fel érvényes képet mindkét kameráról.'], narrowResolution: ['The selected camera resolution is too narrow for these settings.', 'A kiválasztott kamera felbontása túl alacsony ezekhez a beállításokhoz.'], disparityEncodeError: ['Could not encode the disparity image.', 'Nem sikerült kódolni a parallaxis-képet.'], stereoProcessError: ['Stereo image processing failed; see container logs.', 'A sztereó képfeldolgozás nem sikerült; részletek a konténer naplójában.']
         };
         let language = localStorage.getItem('stereoLabLanguage') === 'hu' ? 'hu' : 'en';
@@ -347,6 +385,7 @@
         let previousImageUrl = null;
         let selectedMeasurement = null;
         const calibrationRois = { left: null, right: null };
+        let availableCameras = [];
         let calibrationPreviewFrame = 0;
         let calibrationPreviewLastDraw = 0;
         let calibrationRoiDrag = null;
@@ -445,6 +484,7 @@
 
         function fillCameraLists(devices) {
             const cameras = devices.filter(device => device.kind === 'videoinput');
+            availableCameras = cameras;
             for (const [select, preferredIndex] of [[leftCamera, 0], [rightCamera, 1]]) {
                 const previousDeviceId = select.value;
                 select.replaceChildren();
@@ -463,9 +503,179 @@
                     : Math.min(preferredIndex, cameras.length - 1);
                 select.disabled = cameras.length === 0;
             }
+            if (capturing) return;
             if (cameras.length === 0) setNotice('noCameras');
             else if (cameras.length === 1) setNotice('oneCamera');
             else setNotice('chooseCameras');
+        }
+
+        function activeCameraTrack(side) {
+            const video = side === 'left' ? leftVideo : rightVideo;
+            return video.srcObject?.getVideoTracks()[0] || null;
+        }
+
+        function formatHardwareValue(value) {
+            if (Array.isArray(value)) return value.join(', ');
+            if (value === undefined || value === null || value === '') return translate('hardwareNoValues');
+            return String(value);
+        }
+
+        function hardwareLabel(name) {
+            return name.replace(/([A-Z])/g, ' $1').replace(/^./, letter => letter.toUpperCase());
+        }
+
+        function setHardwareStatus(messageKey, variables = {}, state = '') {
+            const status = document.getElementById('hardwareStatus');
+            status.textContent = translate(messageKey, variables);
+            status.dataset.state = state;
+        }
+
+        function renderHardwareControls() {
+            const side = document.getElementById('hardwareSide').value;
+            const deviceSelect = document.getElementById('hardwareDevice');
+            const controls = document.getElementById('hardwareControls');
+            const deviceIdReadout = document.getElementById('hardwareDeviceId');
+            const track = activeCameraTrack(side);
+            const video = side === 'left' ? leftVideo : rightVideo;
+            const selectedId = track?.getSettings().deviceId || (side === 'left' ? leftCamera.value : rightCamera.value);
+            document.getElementById('resetHardwareSettings').disabled = !track;
+            deviceSelect.replaceChildren();
+            availableCameras.forEach((camera, index) => {
+                const option = document.createElement('option');
+                option.value = camera.deviceId;
+                option.textContent = camera.label || translate('cameraNumber', { index: index + 1 });
+                deviceSelect.append(option);
+            });
+            deviceSelect.value = selectedId || '';
+            deviceSelect.disabled = !availableCameras.length;
+            deviceIdReadout.textContent = selectedId || '-';
+            controls.replaceChildren();
+            if (!track) {
+                setHardwareStatus(capturing ? 'hardwareLoading' : 'hardwareConnectFirst');
+                return;
+            }
+
+            let capabilities;
+            try {
+                capabilities = track.getCapabilities();
+            } catch (error) {
+                setHardwareStatus('hardwareControlError', { message: error.message }, 'error');
+                return;
+            }
+            const settings = track.getSettings();
+            const names = Object.keys(capabilities).filter(name => !['deviceId', 'groupId'].includes(name));
+            let renderedControls = 0;
+            names.forEach(name => {
+                const capability = capabilities[name];
+                const current = settings[name];
+                const label = document.createElement('span');
+                const nameText = document.createElement('span');
+                nameText.textContent = hardwareLabel(name);
+                label.append(nameText);
+                const field = document.createElement('label');
+                field.className = 'hardware-setting';
+                field.append(label);
+
+                if (Array.isArray(capability)) {
+                    const select = document.createElement('select');
+                    capability.forEach(value => {
+                        const option = document.createElement('option');
+                        option.value = value;
+                        option.textContent = value === 'none' ? (language === 'en' ? 'None' : 'Nincs') : value;
+                        select.append(option);
+                    });
+                    select.value = current ?? capability[0];
+                    select.addEventListener('change', () => applyHardwareConstraint(side, name, select.value));
+                    field.append(select);
+                } else if (typeof capability === 'boolean') {
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = Boolean(current);
+                    checkbox.addEventListener('change', () => applyHardwareConstraint(side, name, checkbox.checked));
+                    field.append(checkbox);
+                } else if (capability && typeof capability === 'object' && Number.isFinite(capability.min) && Number.isFinite(capability.max)) {
+                    const numeric = name === 'width' || name === 'height';
+                    const input = document.createElement('input');
+                    input.type = numeric ? 'number' : 'range';
+                    input.min = capability.min;
+                    input.max = capability.max;
+                    input.step = capability.step || (Number.isInteger(capability.min) && Number.isInteger(capability.max) ? 1 : 'any');
+                    input.value = current ?? capability.min;
+                    const output = document.createElement('output');
+                    output.value = formatHardwareValue(current);
+                    label.append(output);
+                    input.addEventListener('input', () => { output.value = input.value; });
+                    input.addEventListener('change', () => applyHardwareConstraint(side, name, Number(input.value)));
+                    field.append(input);
+                } else {
+                    return;
+                }
+                controls.append(field);
+                renderedControls += 1;
+            });
+            setHardwareStatus(renderedControls ? 'hardwareControlApplied' : 'hardwareUnsupported');
+            if (video.videoWidth && video.videoHeight) {
+                const resolution = document.createElement('p');
+                resolution.className = 'hardware-status';
+                resolution.textContent = `Stream resolution: ${video.videoWidth} × ${video.videoHeight}`;
+                controls.append(resolution);
+            }
+            if (renderedControls) document.getElementById('hardwareStatus').textContent = '';
+        }
+
+        async function applyHardwareConstraint(side, name, value) {
+            const track = activeCameraTrack(side);
+            if (!track) return;
+            try {
+                await track.applyConstraints({ [name]: { exact: value } });
+                renderHardwareControls();
+                setHardwareStatus('hardwareControlApplied', {}, 'live');
+                if (name === 'width' || name === 'height') {
+                    const video = side === 'left' ? leftVideo : rightVideo;
+                    const resolution = document.createElement('p');
+                    resolution.className = 'hardware-status';
+                    resolution.textContent = `Stream resolution: ${video.videoWidth} × ${video.videoHeight}`;
+                    document.getElementById('hardwareControls').append(resolution);
+                }
+            } catch (error) {
+                renderHardwareControls();
+                setHardwareStatus('hardwareControlError', { message: error.message }, 'error');
+            }
+        }
+
+        async function switchHardwareDevice(deviceId) {
+            const side = document.getElementById('hardwareSide').value;
+            const ownSelect = side === 'left' ? leftCamera : rightCamera;
+            const otherSelect = side === 'left' ? rightCamera : leftCamera;
+            if (deviceId && deviceId === otherSelect.value) {
+                setHardwareStatus('hardwareSameDevice', {}, 'error');
+                renderHardwareControls();
+                return;
+            }
+            ownSelect.value = deviceId;
+            if (!capturing) {
+                renderHardwareControls();
+                setHardwareStatus('hardwareSwitchWhileOff');
+                return;
+            }
+            const video = side === 'left' ? leftVideo : rightVideo;
+            const streamIndex = side === 'left' ? 0 : 1;
+            const previousStream = streams[streamIndex];
+            try {
+                const option = ownSelect.selectedOptions[0];
+                const newStream = await openCamera(deviceId, option?.textContent || hardwareLabel(side));
+                video.srcObject = newStream;
+                await video.play();
+                if (video.readyState < 2) await new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }));
+                streams[streamIndex] = newStream;
+                previousStream?.getTracks().forEach(track => track.stop());
+                renderHardwareControls();
+                setHardwareStatus('hardwareSwitched', {}, 'live');
+            } catch (error) {
+                ownSelect.value = previousStream?.getVideoTracks()[0]?.getSettings().deviceId || '';
+                renderHardwareControls();
+                setHardwareStatus('hardwareSwitchError', { message: error.message }, 'error');
+            }
         }
 
         async function enumerateCameras() {
@@ -844,6 +1054,7 @@
         }
 
         function closeSettingsDialog() {
+            if (hardwareSettings.open) hardwareSettings.close();
             stopSettingsPreview();
             restoreAppliedSettings();
             document.getElementById('settingsError').textContent = '';
@@ -1078,6 +1289,38 @@
             stopSettingsPreview();
             togglePreview.disabled = !capturing;
             advancedSettings.showModal();
+        });
+        document.getElementById('openHardwareSettings').addEventListener('click', async () => {
+            setHardwareStatus('hardwareLoading');
+            try {
+                await enumerateCameras();
+            } catch (error) {
+                setHardwareStatus('hardwareControlError', { message: error.message }, 'error');
+            }
+            renderHardwareControls();
+            hardwareSettings.showModal();
+        });
+        document.getElementById('hardwareSide').addEventListener('change', renderHardwareControls);
+        document.getElementById('hardwareDevice').addEventListener('change', event => switchHardwareDevice(event.currentTarget.value));
+        ['closeHardwareSettings', 'doneHardwareSettings'].forEach(id => {
+            document.getElementById(id).addEventListener('click', () => hardwareSettings.close());
+        });
+        hardwareSettings.addEventListener('cancel', event => {
+            event.preventDefault();
+            hardwareSettings.close();
+        });
+        document.getElementById('resetHardwareSettings').addEventListener('click', async () => {
+            const side = document.getElementById('hardwareSide').value;
+            const track = activeCameraTrack(side);
+            if (!track || !window.confirm(translate('hardwareResetConfirm'))) return;
+            try {
+                await track.applyConstraints({});
+                renderHardwareControls();
+                setHardwareStatus('hardwareResetDone', {}, 'live');
+            } catch (error) {
+                renderHardwareControls();
+                setHardwareStatus('hardwareResetError', { message: error.message }, 'error');
+            }
         });
         document.getElementById('openCameraCalibration').addEventListener('click', () => {
             document.getElementById('calibrationError').textContent = '';
