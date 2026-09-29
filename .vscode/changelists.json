@@ -1,0 +1,17 @@
+{
+  "changelists": [
+    {
+      "name": "Default",
+      "files": [
+        "Dockerfile",
+        "ROADMAP.md",
+        "README.md",
+        "app.py",
+        "docker-compose.yml",
+        "templates/index.html",
+        ".vscode/changelists.json"
+      ]
+    }
+  ],
+  "active": "Default"
+}
