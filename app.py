@@ -46,61 +46,49 @@ def decode_frame(upload):
     return cv2.imdecode(data, cv2.IMREAD_COLOR)
 
 
-@app.route('/api/client-log', methods=['POST'])
-def client_log():
-    data = request.get_json(silent=True)
+def validate_calibration_params(data, current_params):
     if not isinstance(data, dict):
-        return jsonify({'error': 'Expected a JSON diagnostic event.'}), 400
-    event = data.get('event')
-    details = data.get('details', {})
-    if not isinstance(event, str) or not isinstance(details, dict):
-        return jsonify({'error': 'Diagnostic event and details have invalid types.'}), 400
-    details_json = json.dumps(details, ensure_ascii=True)
-    if len(details_json) > 12000:
-        return jsonify({'error': 'Diagnostic details are too large.'}), 413
-    app.logger.info(
-        'browser_camera event=%s details=%s',
-        event[:80],
-        details_json
-    )
-    return jsonify({'status': 'logged'})
+        raise ValueError('Calibration settings must be a JSON object.')
+    params = current_params.copy()
+    integer_ranges = {
+        'minDisparity': (-64, 64),
+        'numDisparities': (16, 256),
+        'blockSize': (3, 21),
+        'uniquenessRatio': (0, 30),
+        'speckleWindowSize': (0, 200),
+        'speckleRange': (0, 32),
+        'disp12MaxDiff': (-1, 64),
+        'preFilterCap': (1, 63),
+    }
+    for name, (minimum, maximum) in integer_ranges.items():
+        raw_value = data.get(name, params[name])
+        if isinstance(raw_value, bool) or isinstance(raw_value, float):
+            raise ValueError(f'{name} must be an integer.')
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            raise ValueError('Calibration values must be integers.') from None
+        if value < minimum or value > maximum:
+            raise ValueError(f'{name} must be between {minimum} and {maximum}.')
+        params[name] = value
+    if params['numDisparities'] % 16:
+        raise ValueError('numDisparities must be a multiple of 16.')
+    if params['blockSize'] % 2 == 0:
+        raise ValueError('blockSize must be odd.')
+    params['mode'] = data.get('mode', params['mode'])
+    if not isinstance(params['mode'], str) or params['mode'] not in STEREO_MODES:
+        raise ValueError('mode must be SGBM or 3WAY.')
+    params['colorMap'] = data.get('colorMap', params['colorMap'])
+    if not isinstance(params['colorMap'], str) or params['colorMap'] not in COLOR_MAPS:
+        raise ValueError('colorMap must be TURBO, VIRIDIS, or INFERNO.')
+    return params
 
-@app.route('/')
-def index():
-    return render_template('index.html')
 
-@app.route('/api/disparity', methods=['POST'])
-def disparity():
-    started = time.perf_counter()
-    left_upload = request.files.get('left')
-    right_upload = request.files.get('right')
-    app.logger.info(
-        'disparity request content_length=%s left_present=%s right_present=%s',
-        request.content_length,
-        left_upload is not None,
-        right_upload is not None
-    )
-    frame_left = decode_frame(left_upload)
-    frame_right = decode_frame(right_upload)
-    if frame_left is None or frame_right is None:
-        app.logger.warning(
-            'disparity rejected invalid image left_decoded=%s right_decoded=%s',
-            frame_left is not None,
-            frame_right is not None
-        )
-        return jsonify({'error': 'Upload a valid image from each camera.'}), 400
-
+def process_disparity(frame_left, frame_right, params):
     if frame_left.shape[:2] != frame_right.shape[:2]:
         frame_right = cv2.resize(frame_right, (frame_left.shape[1], frame_left.shape[0]))
 
-    with params_lock:
-        params = stereo_params.copy()
-
     if frame_left.shape[1] <= params['numDisparities'] + params['blockSize']:
-        app.logger.warning(
-            'disparity rejected width=%s num_disparities=%s block_size=%s',
-            frame_left.shape[1], params['numDisparities'], params['blockSize']
-        )
         return jsonify({'error': 'The selected camera resolution is too narrow for these settings.'}), 400
 
     try:
@@ -139,14 +127,83 @@ def disparity():
         app.logger.exception('disparity processing failed')
         return jsonify({'error': 'Stereo image processing failed; see container logs.'}), 500
 
+    return Response(buffer.tobytes(), mimetype='image/jpeg', headers={'Cache-Control': 'no-store'})
+
+
+@app.route('/api/client-log', methods=['POST'])
+def client_log():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Expected a JSON diagnostic event.'}), 400
+    event = data.get('event')
+    details = data.get('details', {})
+    if not isinstance(event, str) or not isinstance(details, dict):
+        return jsonify({'error': 'Diagnostic event and details have invalid types.'}), 400
+    details_json = json.dumps(details, ensure_ascii=True)
+    if len(details_json) > 12000:
+        return jsonify({'error': 'Diagnostic details are too large.'}), 413
     app.logger.info(
-        'disparity success left_shape=%s right_shape=%s params=%s elapsed_ms=%.1f',
+        'browser_camera event=%s details=%s',
+        event[:80],
+        details_json
+    )
+    return jsonify({'status': 'logged'})
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/api/disparity', methods=['POST'])
+@app.route('/api/preview', methods=['POST'])
+def disparity():
+    is_preview = request.path == '/api/preview'
+    started = time.perf_counter()
+    left_upload = request.files.get('left')
+    right_upload = request.files.get('right')
+    app.logger.info(
+        'disparity request content_length=%s left_present=%s right_present=%s',
+        request.content_length,
+        left_upload is not None,
+        right_upload is not None
+    )
+    frame_left = decode_frame(left_upload)
+    frame_right = decode_frame(right_upload)
+    if frame_left is None or frame_right is None:
+        app.logger.warning(
+            'disparity rejected invalid image left_decoded=%s right_decoded=%s',
+            frame_left is not None,
+            frame_right is not None
+        )
+        return jsonify({'error': 'Upload a valid image from each camera.'}), 400
+
+    if frame_left.shape[:2] != frame_right.shape[:2]:
+        frame_right = cv2.resize(frame_right, (frame_left.shape[1], frame_left.shape[0]))
+
+    with params_lock:
+        current_params = stereo_params.copy()
+    if is_preview:
+        try:
+            data = json.loads(request.form.get('params', '{}'))
+            params = validate_calibration_params(data, current_params)
+        except (json.JSONDecodeError, ValueError) as error:
+            message = str(error) or 'Calibration settings must be a JSON object.'
+            return jsonify({'error': message}), 400
+    else:
+        params = current_params
+
+    result = process_disparity(frame_left, frame_right, params)
+    if isinstance(result, tuple):
+        return result
+
+    app.logger.info(
+        '%s success left_shape=%s right_shape=%s params=%s elapsed_ms=%.1f',
+        'preview' if is_preview else 'disparity',
         frame_left.shape,
         frame_right.shape,
         params,
         (time.perf_counter() - started) * 1000
     )
-    return Response(buffer.tobytes(), mimetype='image/jpeg', headers={'Cache-Control': 'no-store'})
+    return result
 
 @app.route('/api/calibrate', methods=['GET', 'POST'])
 def calibrate():
@@ -155,41 +212,12 @@ def calibrate():
             params = stereo_params.copy()
         return jsonify({'params': params})
     data = request.get_json(silent=True) or {}
-    if not isinstance(data, dict):
-        return jsonify({'error': 'Calibration settings must be a JSON object.'}), 400
-    integer_ranges = {
-        'minDisparity': (-64, 64),
-        'numDisparities': (16, 256),
-        'blockSize': (3, 21),
-        'uniquenessRatio': (0, 30),
-        'speckleWindowSize': (0, 200),
-        'speckleRange': (0, 32),
-        'disp12MaxDiff': (-1, 64),
-        'preFilterCap': (1, 63),
-    }
     with params_lock:
-        params = stereo_params.copy()
+        current_params = stereo_params.copy()
     try:
-        for name, (minimum, maximum) in integer_ranges.items():
-            raw_value = data.get(name, params[name])
-            if isinstance(raw_value, bool) or isinstance(raw_value, float):
-                return jsonify({'error': f'{name} must be an integer.'}), 400
-            value = int(raw_value)
-            if value < minimum or value > maximum:
-                return jsonify({'error': f'{name} must be between {minimum} and {maximum}.'}), 400
-            params[name] = value
-    except (TypeError, ValueError):
-        return jsonify({'error': 'Calibration values must be integers.'}), 400
-    if params['numDisparities'] % 16:
-        return jsonify({'error': 'numDisparities must be a multiple of 16.'}), 400
-    if params['blockSize'] % 2 == 0:
-        return jsonify({'error': 'blockSize must be odd.'}), 400
-    params['mode'] = data.get('mode', params['mode'])
-    if not isinstance(params['mode'], str) or params['mode'] not in STEREO_MODES:
-        return jsonify({'error': 'mode must be SGBM or 3WAY.'}), 400
-    params['colorMap'] = data.get('colorMap', params['colorMap'])
-    if not isinstance(params['colorMap'], str) or params['colorMap'] not in COLOR_MAPS:
-        return jsonify({'error': 'colorMap must be TURBO, VIRIDIS, or INFERNO.'}), 400
+        params = validate_calibration_params(data, current_params)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     with params_lock:
         stereo_params.update(params)
         params = stereo_params.copy()
