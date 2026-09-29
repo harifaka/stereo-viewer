@@ -3,11 +3,10 @@
     {
       "name": "Default",
       "files": [
+        "app.py",
         ".vscode/changelists.json",
-        "Dockerfile",
-        "README.md",
-        "ROADMAP.md",
-        "templates/index.html"
+        "templates/index.html",
+        "README.md"
       ]
     }
   ],

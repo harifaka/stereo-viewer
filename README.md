@@ -8,6 +8,14 @@ Stereo Lab captures a pair of webcams in the browser and computes a live stereo 
 docker compose up -d --build
 ```
 
+Follow application and camera diagnostics with:
+
+```sh
+docker compose logs -f stereo_app
+```
+
+Browser camera events appear as `browser_camera` entries. They include permission, device enumeration, each camera open result, track state, and browser error details. Frame upload and OpenCV processing results appear as `disparity` entries. Camera device IDs are not written to the logs.
+
 Open <http://localhost:5000>, allow camera access, select a left and right camera, and connect. The browser accesses the host webcams and sends captured frames to the Flask container for processing. Docker does not need direct USB or `/dev/video*` access; this is the supported setup for Docker Desktop on Windows and macOS.
 
 Two identical webcam models are supported. The browser lists each physical camera as a separate numbered entry (for example, `Camera 1 - USB Camera` and `Camera 2 - USB Camera`) and opens the selected device by its browser device ID. The USB vendor/product ID can be the same for both cameras; do not use it to distinguish them or add USB device passthrough to Compose.

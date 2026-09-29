@@ -104,6 +104,7 @@
             <div class="toolbar">
                 <div class="title-block"><div class="section-kicker">Capture / disparity</div><h2>Stereo monitor</h2></div>
                 <div class="actions">
+                    <button class="action-button" id="refreshCameraList" type="button">Refresh cameras</button>
                     <label class="select-wrap" for="leftCamera">Left<select id="leftCamera" aria-label="Left camera"></select></label>
                     <label class="select-wrap" for="rightCamera">Right<select id="rightCamera" aria-label="Right camera"></select></label>
                     <button class="action-button primary" id="toggleCapture" type="button">Connect cameras</button>
@@ -139,6 +140,7 @@
         const leftCamera = document.getElementById('leftCamera');
         const rightCamera = document.getElementById('rightCamera');
         const toggleCapture = document.getElementById('toggleCapture');
+        const refreshCameraList = document.getElementById('refreshCameraList');
         const depthImage = document.getElementById('depthImage');
         const depthPlaceholder = document.getElementById('depthPlaceholder');
         const status = document.getElementById('status');
@@ -154,9 +156,38 @@
             statusText.textContent = message;
         }
 
+        async function reportDiagnostic(event, details = {}) {
+            const entry = { event, details, timestamp: new Date().toISOString() };
+            console.info('[Stereo Lab]', entry);
+            try {
+                await fetch('/api/client-log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(entry),
+                    keepalive: true
+                });
+            } catch (error) {
+                console.warn('[Stereo Lab] Could not send diagnostics to Docker:', error);
+            }
+        }
+
+        function describeTrack(track) {
+            const { deviceId, groupId, ...settings } = track.getSettings();
+            return {
+                label: track.label,
+                kind: track.kind,
+                readyState: track.readyState,
+                muted: track.muted,
+                settings,
+                hasDeviceId: Boolean(deviceId),
+                hasGroupId: Boolean(groupId)
+            };
+        }
+
         function fillCameraLists(devices) {
             const cameras = devices.filter(device => device.kind === 'videoinput');
             for (const [select, preferredIndex] of [[leftCamera, 0], [rightCamera, 1]]) {
+                const previousDeviceId = select.value;
                 select.replaceChildren();
                 cameras.forEach((camera, index) => {
                     const option = document.createElement('option');
@@ -165,7 +196,10 @@
                     option.textContent = `Camera ${index + 1} - ${label}`;
                     select.append(option);
                 });
-                if (cameras.length) select.selectedIndex = Math.min(preferredIndex, cameras.length - 1);
+                const previousIndex = cameras.findIndex(camera => camera.deviceId === previousDeviceId);
+                if (cameras.length) select.selectedIndex = previousIndex >= 0
+                    ? previousIndex
+                    : Math.min(preferredIndex, cameras.length - 1);
                 select.disabled = cameras.length === 0;
             }
             if (cameras.length === 0) notice.textContent = 'No cameras found. Connect a webcam and reload this page.';
@@ -173,19 +207,68 @@
             else notice.textContent = 'Choose the left and right cameras, then connect to start a live depth feed.';
         }
 
+        async function enumerateCameras() {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cameras = devices.filter(device => device.kind === 'videoinput');
+            await reportDiagnostic('camera_enumeration_complete', {
+                totalDevices: devices.length,
+                cameraCount: cameras.length,
+                distinctDeviceIds: new Set(cameras.map(camera => camera.deviceId)).size,
+                cameras: cameras.map((camera, index) => ({
+                    index,
+                    label: camera.label || `Camera ${index + 1}`,
+                    hasDeviceId: Boolean(camera.deviceId),
+                    hasGroupId: Boolean(camera.groupId)
+                }))
+            });
+            fillCameraLists(devices);
+        }
+
         async function refreshCameras() {
             if (!navigator.mediaDevices?.getUserMedia) {
                 throw new Error('Camera capture requires a secure browser context. Open this app at localhost or over HTTPS.');
             }
+            await reportDiagnostic('camera_permission_requested');
             const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            await reportDiagnostic('camera_permission_granted', {
+                tracks: permissionStream.getVideoTracks().map(describeTrack)
+            });
             permissionStream.getTracks().forEach(track => track.stop());
-            fillCameraLists(await navigator.mediaDevices.enumerateDevices());
+            await enumerateCameras();
         }
 
-        async function openCamera(deviceId) {
+        async function openCamera(deviceId, cameraName) {
             const video = { width: { ideal: 640 }, height: { ideal: 480 } };
             if (deviceId) video.deviceId = { exact: deviceId };
-            return navigator.mediaDevices.getUserMedia({ video, audio: false });
+            await reportDiagnostic('camera_open_requested', { camera: cameraName, constraints: video });
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+                const tracks = stream.getVideoTracks();
+                tracks.forEach(track => {
+                    track.addEventListener('ended', () => reportDiagnostic('camera_track_ended', {
+                        camera: cameraName, track: describeTrack(track)
+                    }));
+                    track.addEventListener('mute', () => reportDiagnostic('camera_track_muted', {
+                        camera: cameraName, track: describeTrack(track)
+                    }));
+                    track.addEventListener('unmute', () => reportDiagnostic('camera_track_unmuted', {
+                        camera: cameraName, track: describeTrack(track)
+                    }));
+                });
+                await reportDiagnostic('camera_open_succeeded', {
+                    camera: cameraName,
+                    tracks: tracks.map(describeTrack)
+                });
+                return stream;
+            } catch (error) {
+                await reportDiagnostic('camera_open_failed', {
+                    camera: cameraName,
+                    errorName: error.name,
+                    errorMessage: error.message,
+                    constraints: error.constraint || null
+                });
+                throw error;
+            }
         }
 
         function stopCapture() {
@@ -202,6 +285,7 @@
             previousImageUrl = null;
             leftCamera.disabled = false;
             rightCamera.disabled = false;
+            refreshCameraList.disabled = false;
             toggleCapture.textContent = 'Connect cameras';
             processingState.textContent = 'Ready';
             setStatus('idle', 'Cameras disconnected');
@@ -241,13 +325,20 @@
         }
 
         async function startCapture() {
+            const leftName = leftCamera.selectedOptions[0]?.textContent || 'Left camera';
+            const rightName = rightCamera.selectedOptions[0]?.textContent || 'Right camera';
+            await reportDiagnostic('camera_connect_clicked', {
+                leftCamera: leftName,
+                rightCamera: rightName,
+                sameDeviceId: leftCamera.value === rightCamera.value
+            });
             if (!leftCamera.value || !rightCamera.value) throw new Error('No cameras are available to connect.');
             if (leftCamera.value === rightCamera.value) {
                 throw new Error('Choose a different camera for each input.');
             }
-            const leftStream = await openCamera(leftCamera.value);
+            const leftStream = await openCamera(leftCamera.value, leftName);
             streams = [leftStream];
-            const rightStream = await openCamera(rightCamera.value);
+            const rightStream = await openCamera(rightCamera.value, rightName);
             streams.push(rightStream);
             leftVideo.srcObject = leftStream;
             rightVideo.srcObject = rightStream;
@@ -259,12 +350,23 @@
             document.getElementById('rightPlaceholder').hidden = true;
             leftCamera.disabled = true;
             rightCamera.disabled = true;
+            refreshCameraList.disabled = true;
             toggleCapture.textContent = 'Disconnect';
             capturing = true;
             setStatus('live', 'Live depth feed');
             notice.textContent = 'Live stereo processing is active.';
             processingState.textContent = 'Processing';
+            await reportDiagnostic('stereo_capture_started', {
+                leftVideo: { width: leftVideo.videoWidth, height: leftVideo.videoHeight },
+                rightVideo: { width: rightVideo.videoWidth, height: rightVideo.videoHeight },
+                leftTracks: leftStream.getVideoTracks().map(describeTrack),
+                rightTracks: rightStream.getVideoTracks().map(describeTrack)
+            });
             processFrames().catch(error => {
+                reportDiagnostic('frame_processing_failed', {
+                    errorName: error.name,
+                    errorMessage: error.message
+                });
                 stopCapture();
                 setStatus('error', 'Camera or processing error');
                 notice.textContent = error.message;
@@ -295,6 +397,10 @@
             try {
                 await startCapture();
             } catch (error) {
+                await reportDiagnostic('camera_connect_failed', {
+                    errorName: error.name,
+                    errorMessage: error.message
+                });
                 streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
                 streams = [];
                 setStatus('error', 'Camera unavailable');
@@ -303,13 +409,36 @@
                 toggleCapture.disabled = false;
             }
         });
+        refreshCameraList.addEventListener('click', async () => {
+            refreshCameraList.disabled = true;
+            try {
+                await refreshCameras();
+            } catch (error) {
+                notice.textContent = error.message;
+            } finally {
+                refreshCameraList.disabled = capturing;
+            }
+        });
+        navigator.mediaDevices?.addEventListener('devicechange', () => {
+            enumerateCameras().catch(error => reportDiagnostic('camera_refresh_failed', {
+                errorName: error.name,
+                errorMessage: error.message
+            }));
+        });
 
         document.getElementById('numDisparities').addEventListener('input', updateCalibration);
         document.getElementById('blockSize').addEventListener('input', updateCalibration);
         updateCalibration();
+        refreshCameraList.disabled = true;
         refreshCameras().catch(error => {
+            reportDiagnostic('camera_initialization_failed', {
+                errorName: error.name,
+                errorMessage: error.message
+            });
             setStatus('error', 'Camera access unavailable');
             notice.textContent = error.message;
+        }).finally(() => {
+            refreshCameraList.disabled = capturing;
         });
         window.addEventListener('pagehide', stopCapture);
     </script>
