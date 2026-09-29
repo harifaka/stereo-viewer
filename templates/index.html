@@ -107,8 +107,17 @@
         .preview-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px; border-top: 1px solid var(--line); }
         .preview-actions .action-button { min-height: 36px; padding: 0 12px; font-size: 11px; }
         .preview-hint { margin: 0; color: var(--muted); font-size: 10px; }
-        #cameraCalibration { width: min(900px, calc(100vw - 28px)); }
+        #cameraCalibration { width: min(1160px, calc(100vw - 28px)); }
         .calibration-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .9fr); gap: 20px; padding: 20px 0; }
+        .calibration-monitor { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+        .calibration-feed { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; background: #111412; }
+        .calibration-feed h4 { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 8px; margin: 0; padding: 0 10px; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 650; }
+        .calibration-feed h4 span { color: var(--muted); font-size: 9px; font-weight: 500; }
+        .calibration-feed canvas { display: block; width: 100%; aspect-ratio: 4 / 3; background: #090b09; object-fit: contain; }
+        .calibration-feed canvas.selectable { cursor: crosshair; touch-action: none; }
+        .calibration-hint-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; }
+        .calibration-hint-row .action-button { min-height: 34px; padding: 0 10px; font-size: 11px; }
+        .calibration-hint-copy { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
         .target-preview { display: grid; min-height: 300px; place-items: center; overflow: auto; border: 1px solid var(--line); background: #fff; }
         .target-preview img { display: block; width: min(100%, 430px); height: auto; cursor: zoom-in; image-rendering: pixelated; }
         .target-preview img:fullscreen { width: auto; height: auto; max-width: 100vw; max-height: 100vh; background: #fff; object-fit: contain; cursor: zoom-out; }
@@ -142,6 +151,8 @@
             .settings-layout { grid-template-columns: 1fr; gap: 18px; }
             .settings-grid { padding: 0; }
             .preview-view { aspect-ratio: 16 / 10; }
+            .calibration-monitor { grid-template-columns: 1fr; }
+            .calibration-hint-row { align-items: flex-start; flex-direction: column; }
             .calibration-content { grid-template-columns: 1fr; }
             .target-preview { min-height: 230px; }
         }
@@ -231,6 +242,12 @@
                 <div class="settings-heading-copy"><div class="section-kicker" data-i18n="stereoCalibration">Stereo calibration</div><h3 id="calibrationTitle" data-i18n="checkerboardCalibration">Checkerboard calibration</h3><p class="settings-intro" data-i18n="calibrationIntro">Capture the same checkerboard in both cameras from at least eight different positions. Accepted views build rectification and metric depth calibration.</p></div>
                 <button class="action-button" id="closeCalibration" type="button" data-i18n="close">Close</button>
             </div>
+            <section class="calibration-monitor" aria-label="Calibration camera views" data-i18n-aria="calibrationMonitorLabel">
+                <article class="calibration-feed"><h4><span data-i18n="leftCameraLabel">Left camera</span><span data-i18n="dragBoardHint">DRAG TO HINT</span></h4><canvas id="calibrationLeftView" class="selectable" aria-label="Left camera calibration preview; drag around the full checkerboard" data-i18n-aria="leftCalibrationPreview"></canvas></article>
+                <article class="calibration-feed"><h4><span data-i18n="rightCameraLabel">Right camera</span><span data-i18n="dragBoardHint">DRAG TO HINT</span></h4><canvas id="calibrationRightView" class="selectable" aria-label="Right camera calibration preview; drag around the full checkerboard" data-i18n-aria="rightCalibrationPreview"></canvas></article>
+                <article class="calibration-feed"><h4><span data-i18n="stereoComposite">Stereo composite</span><span data-i18n="liveDisparity">LIVE DISPARITY</span></h4><canvas id="calibrationComposite" aria-label="Live stereo disparity composite" data-i18n-aria="calibrationCompositeLabel"></canvas></article>
+            </section>
+            <div class="calibration-hint-row"><p class="calibration-hint-copy" data-i18n="boardHintTip">Drag a box around the entire board in either camera. The hint is optional and detection still searches the full image.</p><button class="action-button" id="clearBoardHints" type="button" data-i18n="clearBoardHints">Clear location hints</button></div>
             <div class="calibration-content">
                 <div class="calibration-fields">
                     <label><span data-i18n="innerCornersColumns">Inner corners across</span><input id="boardColumns" type="number" min="4" max="15" value="9"></label>
@@ -273,6 +290,9 @@
         const cameraCalibration = document.getElementById('cameraCalibration');
         const checkerboardTarget = document.getElementById('checkerboardTarget');
         const mobileTargetUrl = document.getElementById('mobileTargetUrl');
+        const calibrationLeftView = document.getElementById('calibrationLeftView');
+        const calibrationRightView = document.getElementById('calibrationRightView');
+        const calibrationComposite = document.getElementById('calibrationComposite');
         const translations = {
             liveDepthWorkstation: ['Live depth workstation', 'Valós idejű mélységmérés'], camerasDisconnected: ['Cameras disconnected', 'A kamerák nincsenek csatlakoztatva'],
             captureDisparity: ['Capture / disparity', 'Felvétel / parallaxis'], stereoMonitor: ['Stereo monitor', 'Sztereó monitor'], refreshCameras: ['Refresh cameras', 'Kamerák frissítése'], detailedSettings: ['Detailed settings', 'Részletes beállítások'],
@@ -284,6 +304,7 @@
             measurement: ['Point distance', 'Pont távolsága'], measurementPrompt: ['Click the map to measure', 'Kattints a térképre a méréshez'], measurementOverlayLabel: ['Select a point to measure distance', 'Válassz pontot a távolság méréséhez'],
                         measurementCalculating: ['Calculating…', 'Számítás…'],
             cameraCalibration: ['Camera calibration', 'Kamerakalibrálás'], stereoCalibration: ['Stereo calibration', 'Sztereó kalibrálás'], checkerboardCalibration: ['Checkerboard calibration', 'Sakktáblás kalibrálás'],
+            calibrationMonitorLabel: ['Calibration camera views', 'Kalibrációs kameranézetek'], leftCalibrationPreview: ['Left camera calibration preview; drag around the full checkerboard', 'Bal kamera kalibrációs előnézete; húzz keretet a teljes sakktábla köré'], rightCalibrationPreview: ['Right camera calibration preview; drag around the full checkerboard', 'Jobb kamera kalibrációs előnézete; húzz keretet a teljes sakktábla köré'], calibrationCompositeLabel: ['Live stereo disparity composite', 'Élő sztereó parallaxis-kompozit'], dragBoardHint: ['DRAG TO HINT', 'HÚZD A KERETET'], stereoComposite: ['Stereo composite', 'Sztereó kompozit'], liveDisparity: ['LIVE DISPARITY', 'ÉLŐ PARALLAXIS'], boardHintTip: ['Drag a box around the entire board in either camera. The hint is optional and detection still searches the full image.', 'Húzz keretet a teljes tábla köré bármelyik kameraképen. A tipp nem kötelező; a keresés a teljes képen is lefut.'], clearBoardHints: ['Clear location hints', 'Helytippek törlése'],
             calibrationIntro: ['Capture the same checkerboard in both cameras from at least eight different positions. Accepted views build rectification and metric depth calibration.', 'Rögzítsd ugyanazt a sakktáblát mindkét kamerával legalább nyolc különböző helyzetből. Az elfogadott nézetekből geometriai korrekció és metrikus mélységkalibráció készül.'],
             innerCornersColumns: ['Inner corners across', 'Belső sarkok vízszintesen'], innerCornersRows: ['Inner corners down', 'Belső sarkok függőlegesen'], squareSize: ['Square size (mm)', 'Négyzetméret (mm)'],
             calibrationTargetTip: ['Print at actual size, or show the pattern full-screen on a phone. For a screen, measure one displayed square with a ruler and enter that real size.', 'Nyomtasd tényleges méretben, vagy jelenítsd meg teljes képernyőn telefonon. Kijelzőnél mérd meg vonalzóval a négyzet tényleges méretét, és azt add meg.'],
@@ -324,6 +345,11 @@
         let streams = [];
         let capturing = false;
         let previousImageUrl = null;
+        let selectedMeasurement = null;
+        const calibrationRois = { left: null, right: null };
+        let calibrationPreviewFrame = 0;
+        let calibrationPreviewLastDraw = 0;
+        let calibrationRoiDrag = null;
         let appliedSettings = {
             minDisparity: 0,
             numDisparities: 64,
@@ -525,7 +551,6 @@
             depthPlaceholder.hidden = false;
             if (previousImageUrl) URL.revokeObjectURL(previousImageUrl);
             previousImageUrl = null;
-                let selectedMeasurement = null;
             leftCamera.disabled = false;
             rightCamera.disabled = false;
             refreshCameraList.disabled = false;
@@ -574,6 +599,106 @@
             document.getElementById('openPhoneTarget').href = target.href;
         }
 
+        function drawCalibrationCamera(canvas, video, roi) {
+            if (!video.videoWidth || !video.videoHeight) return;
+            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            }
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const drag = calibrationRoiDrag?.canvas === canvas ? calibrationRoiDrag : null;
+            const selection = drag ? {
+                x: Math.min(drag.startX, drag.endX),
+                y: Math.min(drag.startY, drag.endY),
+                width: Math.abs(drag.endX - drag.startX),
+                height: Math.abs(drag.endY - drag.startY)
+            } : roi;
+            if (selection) {
+                context.save();
+                context.strokeStyle = '#c7f36b';
+                context.lineWidth = Math.max(2, canvas.width / 320);
+                context.setLineDash([8, 5]);
+                context.strokeRect(
+                    selection.x * canvas.width,
+                    selection.y * canvas.height,
+                    selection.width * canvas.width,
+                    selection.height * canvas.height
+                );
+                context.restore();
+            }
+        }
+
+        function drawCalibrationComposite() {
+            if (calibrationComposite.width !== 640 || calibrationComposite.height !== 480) {
+                calibrationComposite.width = 640;
+                calibrationComposite.height = 480;
+            }
+            const context = calibrationComposite.getContext('2d');
+            context.fillStyle = '#090b09';
+            context.fillRect(0, 0, calibrationComposite.width, calibrationComposite.height);
+            if (!depthImage.hidden && depthImage.naturalWidth && depthImage.naturalHeight) {
+                context.drawImage(depthImage, 0, 0, calibrationComposite.width, calibrationComposite.height);
+            }
+        }
+
+        function renderCalibrationPreviews(timestamp) {
+            if (!cameraCalibration.open) {
+                calibrationPreviewFrame = 0;
+                return;
+            }
+            if (timestamp - calibrationPreviewLastDraw >= 120) {
+                drawCalibrationCamera(calibrationLeftView, leftVideo, calibrationRois.left);
+                drawCalibrationCamera(calibrationRightView, rightVideo, calibrationRois.right);
+                drawCalibrationComposite();
+                calibrationPreviewLastDraw = timestamp;
+            }
+            calibrationPreviewFrame = requestAnimationFrame(renderCalibrationPreviews);
+        }
+
+        function startCalibrationPreviews() {
+            if (!calibrationPreviewFrame) {
+                calibrationPreviewLastDraw = 0;
+                calibrationPreviewFrame = requestAnimationFrame(renderCalibrationPreviews);
+            }
+        }
+
+        function stopCalibrationPreviews() {
+            if (calibrationPreviewFrame) cancelAnimationFrame(calibrationPreviewFrame);
+            calibrationPreviewFrame = 0;
+        }
+
+        function updateCalibrationRoiFromPointer(event) {
+            if (!calibrationRoiDrag || event.pointerId !== calibrationRoiDrag.pointerId) return;
+            const bounds = calibrationRoiDrag.canvas.getBoundingClientRect();
+            calibrationRoiDrag.endX = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+            calibrationRoiDrag.endY = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+        }
+
+        function beginCalibrationRoi(camera, canvas, event) {
+            if (!capturing || event.button !== 0) return;
+            const bounds = canvas.getBoundingClientRect();
+            const startX = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+            const startY = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+            calibrationRoiDrag = { camera, canvas, pointerId: event.pointerId, startX, startY, endX: startX, endY: startY };
+            canvas.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        }
+
+        function finishCalibrationRoi(event) {
+            if (!calibrationRoiDrag || event.pointerId !== calibrationRoiDrag.pointerId) return;
+            updateCalibrationRoiFromPointer(event);
+            const drag = calibrationRoiDrag;
+            const roi = {
+                x: Math.min(drag.startX, drag.endX),
+                y: Math.min(drag.startY, drag.endY),
+                width: Math.abs(drag.endX - drag.startX),
+                height: Math.abs(drag.endY - drag.startY)
+            };
+            calibrationRois[drag.camera] = roi.width >= 0.03 && roi.height >= 0.03 ? roi : null;
+            calibrationRoiDrag = null;
+        }
+
         function updateCalibrationStatus(result) {
             const status = document.getElementById('calibrationStatus');
             if (result.calibrated) {
@@ -606,6 +731,7 @@
             form.append('columns', document.getElementById('boardColumns').value);
             form.append('rows', document.getElementById('boardRows').value);
             form.append('squareSizeMm', document.getElementById('squareSizeMm').value);
+            form.append('rois', JSON.stringify(calibrationRois));
             const response = await fetch('/api/stereo-calibration', { method: 'POST', body: form });
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Calibration capture failed.');
@@ -957,9 +1083,22 @@
             document.getElementById('calibrationError').textContent = '';
             updateCalibrationTarget();
             cameraCalibration.showModal();
+            startCalibrationPreviews();
             refreshCalibrationStatus().catch(error => {
                 document.getElementById('calibrationError').textContent = error.message;
             });
+        });
+        cameraCalibration.addEventListener('close', stopCalibrationPreviews);
+        calibrationLeftView.addEventListener('pointerdown', event => beginCalibrationRoi('left', calibrationLeftView, event));
+        calibrationRightView.addEventListener('pointerdown', event => beginCalibrationRoi('right', calibrationRightView, event));
+        [calibrationLeftView, calibrationRightView].forEach(canvas => {
+            canvas.addEventListener('pointermove', updateCalibrationRoiFromPointer);
+            canvas.addEventListener('pointerup', finishCalibrationRoi);
+            canvas.addEventListener('pointercancel', finishCalibrationRoi);
+        });
+        document.getElementById('clearBoardHints').addEventListener('click', () => {
+            calibrationRois.left = null;
+            calibrationRois.right = null;
         });
         ['closeCalibration', 'doneCalibration'].forEach(id => {
             document.getElementById(id).addEventListener('click', () => cameraCalibration.close());

@@ -255,6 +255,41 @@ def build_stereo_calibration(captures, board, image_size):
     }
 
 
+def find_calibration_corners(gray, pattern_size, roi=None):
+    search_regions = []
+    if roi:
+        x, y, region_width, region_height = roi
+        search_regions.append((gray[y:y + region_height, x:x + region_width], x, y))
+    search_regions.append((gray, 0, 0))
+
+    for region, offset_x, offset_y in search_regions:
+        if region.size == 0:
+            continue
+        normalized = cv2.equalizeHist(region)
+        if hasattr(cv2, 'findChessboardCornersSB'):
+            sb_flags = cv2.CALIB_CB_NORMALIZE_IMAGE | cv2.CALIB_CB_EXHAUSTIVE
+            try:
+                found, corners = cv2.findChessboardCornersSB(normalized, pattern_size, sb_flags)
+            except cv2.error:
+                found, corners = False, None
+            if found:
+                corners[:, 0, 0] += offset_x
+                corners[:, 0, 1] += offset_y
+                return corners
+
+        classic_flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
+        for candidate in (region, normalized):
+            try:
+                found, corners = cv2.findChessboardCorners(candidate, pattern_size, classic_flags)
+            except cv2.error:
+                continue
+            if found:
+                corners[:, 0, 0] += offset_x
+                corners[:, 0, 1] += offset_y
+                return corners
+    return None
+
+
 @app.route('/api/stereo-calibration', methods=['GET', 'POST', 'DELETE'])
 def stereo_calibration():
     if request.method == 'GET':
@@ -279,15 +314,47 @@ def stereo_calibration():
     if frame_left.shape[:2] != frame_right.shape[:2]:
         return jsonify({'error': 'Both camera frames must have the same resolution.'}), 400
 
+    try:
+        raw_rois = json.loads(request.form.get('rois', '{}'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Board location hints must be valid JSON.'}), 400
+    if not isinstance(raw_rois, dict):
+        return jsonify({'error': 'Board location hints must be an object.'}), 400
+    rois = {}
+    for camera in ('left', 'right'):
+        roi = raw_rois.get(camera)
+        if roi is None:
+            continue
+        if not isinstance(roi, dict):
+            return jsonify({'error': f'The {camera} board location hint is invalid.'}), 400
+        try:
+            x, y, roi_width, roi_height = (float(roi[key]) for key in ('x', 'y', 'width', 'height'))
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'error': f'The {camera} board location hint is invalid.'}), 400
+        if (not all(math.isfinite(value) for value in (x, y, roi_width, roi_height))
+                or x < 0 or y < 0 or roi_width <= 0 or roi_height <= 0
+                or x + roi_width > 1 or y + roi_height > 1):
+            return jsonify({'error': f'The {camera} board location hint is outside its image.'}), 400
+        image_height, image_width = frame_left.shape[:2]
+        left = max(0, round(x * image_width))
+        top = max(0, round(y * image_height))
+        right = min(image_width, round((x + roi_width) * image_width))
+        bottom = min(image_height, round((y + roi_height) * image_height))
+        rois[camera] = (left, top, right - left, bottom - top)
+
     board = (columns, rows, square_size_mm)
     gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
     gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
     pattern_size = (columns, rows)
-    flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
-    found_left, corners_left = cv2.findChessboardCorners(gray_left, pattern_size, flags)
-    found_right, corners_right = cv2.findChessboardCorners(gray_right, pattern_size, flags)
-    if not found_left or not found_right:
-        return jsonify({'error': 'Chessboard not found in both camera views. Keep the full board visible and well lit.'}), 422
+    corners_left = find_calibration_corners(gray_left, pattern_size, rois.get('left'))
+    corners_right = find_calibration_corners(gray_right, pattern_size, rois.get('right'))
+    missing = [camera for camera, corners in (('left', corners_left), ('right', corners_right)) if corners is None]
+    if missing:
+        labels = ' and '.join(f'{camera} camera' for camera in missing)
+        return jsonify({
+            'error': f'Chessboard not found in the {labels} view. Drag a box around the full board in that preview, then retry.',
+            'missingViews': missing,
+        }), 422
     refine = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
     corners_left = cv2.cornerSubPix(gray_left, corners_left, (11, 11), (-1, -1), refine)
     corners_right = cv2.cornerSubPix(gray_right, corners_right, (11, 11), (-1, -1), refine)
