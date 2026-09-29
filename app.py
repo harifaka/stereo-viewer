@@ -31,7 +31,7 @@ stereo_params = {
 }
 params_lock = Lock()
 calibration_lock = Lock()
-calibration_state = {'captures': [], 'board': None, 'active': None}
+calibration_state = {'captures': [], 'board': None, 'active': None, 'method': None}
 CALIBRATION_VIEWS_REQUIRED = 8
 COLOR_MAPS = {
     'TURBO': cv2.COLORMAP_TURBO,
@@ -94,6 +94,8 @@ def validate_calibration_params(data, current_params):
 def estimate_point(disparity_map, x, y, active, params):
     if not active or active['image_size'] != (disparity_map.shape[1], disparity_map.shape[0]):
         return None, 'Calibrate this camera resolution before measuring distance.'
+    if not active.get('metric', True):
+        return None, 'Feature alignment estimates relative disparity only; checkerboard calibration is required for metric distance.'
     if x < 0 or y < 0 or x >= disparity_map.shape[1] or y >= disparity_map.shape[0]:
         return None, 'Selected point is outside the disparity image.'
     region = disparity_map[max(0, y - 2):y + 3, max(0, x - 2):x + 3]
@@ -186,17 +188,93 @@ def calibration_status():
             'captures': len(calibration_state['captures']),
             'requiredCaptures': CALIBRATION_VIEWS_REQUIRED,
             'calibrated': active is not None,
+            'method': calibration_state['method'],
+            'metric': bool(active and active.get('metric', True)),
         }
         if active:
             result.update({
                 'imageSize': list(active['image_size']),
-                'baselineMm': round(active['baseline_mm'], 2),
-                'focalLengthPx': round(active['focal_length_px'], 2),
-                'squareSizeMm': active['square_size_mm'],
-                'columns': active['columns'],
-                'rows': active['rows'],
             })
+            if active.get('metric', True):
+                result.update({
+                    'baselineMm': round(active['baseline_mm'], 2),
+                    'focalLengthPx': round(active['focal_length_px'], 2),
+                    'squareSizeMm': active['square_size_mm'],
+                    'columns': active['columns'],
+                    'rows': active['rows'],
+                })
+            else:
+                result.update({
+                    'matchedFeatures': active['matched_features'],
+                    'inliers': active['inliers'],
+                })
         return result
+
+
+def build_feature_rectification(frame_left, frame_right):
+    gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
+    gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced_left = clahe.apply(gray_left)
+    enhanced_right = clahe.apply(gray_right)
+    detector = cv2.SIFT_create(nfeatures=3000, contrastThreshold=0.01)
+    keypoints_left, descriptors_left = detector.detectAndCompute(enhanced_left, None)
+    keypoints_right, descriptors_right = detector.detectAndCompute(enhanced_right, None)
+    if descriptors_left is None or descriptors_right is None:
+        raise ValueError('Not enough image texture found. Improve the lighting or aim both cameras at a detailed scene.')
+
+    pairs = cv2.BFMatcher(cv2.NORM_L2).knnMatch(descriptors_left, descriptors_right, k=2)
+    matches = [
+        neighbors[0] for neighbors in pairs
+        if len(neighbors) == 2 and neighbors[0].distance < 0.75 * neighbors[1].distance
+    ]
+    if len(matches) < 20:
+        raise ValueError('Too few reliable features match between the cameras. Aim both cameras at a shared, detailed scene.')
+
+    points_left = np.float32([keypoints_left[match.queryIdx].pt for match in matches])
+    points_right = np.float32([keypoints_right[match.trainIdx].pt for match in matches])
+    height, width = frame_left.shape[:2]
+    fundamental, mask = cv2.findFundamentalMat(
+        points_left,
+        points_right,
+        cv2.FM_RANSAC,
+        max(1.0, width * 0.0015),
+        0.999,
+    )
+    if fundamental is None or mask is None:
+        raise ValueError('Could not estimate camera alignment. Try a brighter, more detailed shared scene.')
+    inliers = mask.ravel().astype(bool)
+    inlier_count = int(np.count_nonzero(inliers))
+    if inlier_count < 15 or inlier_count / len(matches) < 0.25:
+        raise ValueError('Feature matches were inconsistent. Keep both cameras fixed and capture a shared, detailed scene.')
+
+    rectified, homography_left, homography_right = cv2.stereoRectifyUncalibrated(
+        points_left[inliers],
+        points_right[inliers],
+        fundamental,
+        (width, height),
+    )
+    if not rectified:
+        raise ValueError('Could not rectify the camera pair from these feature matches.')
+
+    maps = []
+    for homography in (homography_left, homography_right):
+        if not np.isfinite(homography).all() or abs(np.linalg.det(homography)) < 1e-12:
+            raise ValueError('The estimated camera alignment is unstable. Capture another shared scene.')
+        map_x, map_y = cv2.initUndistortRectifyMap(
+            np.eye(3), np.zeros(5), homography, np.eye(3), (width, height), cv2.CV_32FC1
+        )
+        maps.append((map_x, map_y))
+
+    return {
+        'image_size': (width, height),
+        'map_left': maps[0],
+        'map_right': maps[1],
+        'q': None,
+        'metric': False,
+        'matched_features': len(matches),
+        'inliers': inlier_count,
+    }
 
 
 def build_stereo_calibration(captures, board, image_size):
@@ -296,13 +374,29 @@ def stereo_calibration():
         return jsonify(calibration_status())
     if request.method == 'DELETE':
         with calibration_lock:
-            calibration_state.update({'captures': [], 'board': None, 'active': None})
+            calibration_state.update({'captures': [], 'board': None, 'active': None, 'method': None})
         return jsonify(calibration_status())
 
     frame_left = decode_frame(request.files.get('left'))
     frame_right = decode_frame(request.files.get('right'))
     if frame_left is None or frame_right is None:
         return jsonify({'error': 'Upload a valid image from each camera.'}), 400
+    if frame_left.shape[:2] != frame_right.shape[:2]:
+        return jsonify({'error': 'Both camera frames must have the same resolution.'}), 400
+    method = request.form.get('method', 'checkerboard')
+    if method not in ('checkerboard', 'feature'):
+        return jsonify({'error': 'Calibration method must be checkerboard or feature.'}), 400
+    if method == 'feature':
+        try:
+            active = build_feature_rectification(frame_left, frame_right)
+        except (cv2.error, ValueError) as error:
+            return jsonify({'error': str(error) or 'Feature-based calibration failed.'}), 422
+        with calibration_lock:
+            calibration_state.update({
+                'captures': [], 'board': None, 'active': active, 'method': 'feature'
+            })
+        return jsonify(calibration_status())
+
     try:
         columns = int(request.form.get('columns', '9'))
         rows = int(request.form.get('rows', '6'))
@@ -360,9 +454,12 @@ def stereo_calibration():
     corners_right = cv2.cornerSubPix(gray_right, corners_right, (11, 11), (-1, -1), refine)
     image_size = (frame_left.shape[1], frame_left.shape[0])
     with calibration_lock:
-        if calibration_state['board'] != board or calibration_state['captures'] and calibration_state['captures'][0][2] != image_size:
+        if (calibration_state['method'] != 'checkerboard'
+                or calibration_state['board'] != board
+                or calibration_state['captures'] and calibration_state['captures'][0][2] != image_size):
             calibration_state.update({'captures': [], 'board': board, 'active': None})
         calibration_state['board'] = board
+        calibration_state['method'] = 'checkerboard'
         calibration_state['captures'].append((corners_left, corners_right, image_size))
         captures = calibration_state['captures'][:]
 

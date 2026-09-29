@@ -3,8 +3,9 @@
     {
       "name": "Default",
       "files": [
-        "templates/index.html",
         ".vscode/changelists.json",
+        "app.py",
+        "templates/index.html",
         "README.md"
       ]
     }
