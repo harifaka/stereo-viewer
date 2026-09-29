@@ -12,14 +12,14 @@ This document outlines the development roadmap for a Dockerized stereoscopic vis
   - Enumerate two cameras independently and open each by its browser `deviceId`, including identical webcam models.
   - Send captured frames to Flask for disparity processing, keeping host camera access outside the container.
   - Keep direct V4L2/container camera capture as a separate future option if needed; it is not part of this setup.
-- [ ] **Stereo BM/SGBM Algorithm**
-  - Convert frames to grayscale.
-  - Implement `cv2.StereoBM_create` or `cv2.StereoSGBM_create`.
-  - Calculate Disparity Map and apply `cv2.applyColorMap(..., cv2.COLORMAP_JET)` for visual representation.
+- [x] **Stereo BM/SGBM Algorithm**
+  - Convert frames to grayscale and calculate disparity with configurable `cv2.StereoSGBM_create`.
+  - Filter invalid matches and visualize the disparity with a selectable Turbo, Viridis, or Inferno palette.
 - [ ] **Modern Web UI (Frontend)**
-  - Build UI using Bootstrap 5 (Dark Mode standard).
-  - Implement Live View container using multipart HTTP stream (MJPEG).
-  - Create a Calibration Modal to adjust `numDisparities` (multiples of 16) and `blockSize` (odd numbers) via an API endpoint (`/api/calibrate`).
+  - [ ] Build UI using Bootstrap 5 (Dark Mode standard).
+  - [ ] Implement Live View container using multipart HTTP stream (MJPEG).
+  - [x] Create a detailed settings modal for StereoSGBM tuning via `/api/calibrate`.
+  - [x] Make camera and disparity views responsive and openable in full screen.
 
 ## Phase 2: Enhanced Depth, UX, & AI Integration (V3)
 **Goal:** Upgrade the depth map with interactive features, AI object detection, and better calibration techniques.

@@ -6,7 +6,8 @@
         "app.py",
         ".vscode/changelists.json",
         "templates/index.html",
-        "README.md"
+        "README.md",
+        "ROADMAP.md"
       ]
     }
   ],

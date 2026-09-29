@@ -22,6 +22,8 @@ Two identical webcam models are supported. The browser lists each physical camer
 
 On Windows, connect both cameras before opening the page, allow camera access in the browser and Windows privacy settings, then reload the page. If one camera cannot be opened, close other apps using it and try separate USB ports; two high-resolution streams on one USB controller can exceed its bandwidth. Camera access requires `localhost` or HTTPS.
 
-Use the disparity and block-size controls to tune the depth view. For meaningful results, use a calibrated, side-by-side stereo camera pair with matching resolution and synchronized capture.
+Open **Detailed settings** to tune StereoSGBM, including minimum disparity, disparity range, block size, uniqueness and speckle filtering, left-right consistency, processing mode, and the Turbo, Viridis, or Inferno palette. Settings are applied together; canceling and reopening restores the last applied values. The disparity view scales with the available layout, and clicking either live camera feed or the disparity image opens that view full screen. Press Escape to leave full screen.
+
+StereoSGBM generally produces a denser, more configurable disparity estimate than the previous basic StereoBM matcher. Its map is still relative disparity, not calibrated distance: accurate depth requires a rigid side-by-side stereo rig, matching image geometry, synchronized capture, and camera calibration with stereo rectification. Those calibration and rectification workflows remain future work, so tuning the matcher alone cannot correct lens distortion, camera misalignment, or timing differences.
 
 If no cameras appear, grant the site camera permission and reload the page.

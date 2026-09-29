@@ -13,8 +13,28 @@ logging.basicConfig(
 )
 app = Flask(__name__)
 app.logger.setLevel(logging.INFO)
-stereo_params = {'numDisparities': 16, 'blockSize': 15}
+stereo_params = {
+    'minDisparity': 0,
+    'numDisparities': 64,
+    'blockSize': 5,
+    'uniquenessRatio': 10,
+    'speckleWindowSize': 50,
+    'speckleRange': 2,
+    'disp12MaxDiff': 1,
+    'preFilterCap': 31,
+    'mode': '3WAY',
+    'colorMap': 'TURBO',
+}
 params_lock = Lock()
+COLOR_MAPS = {
+    'TURBO': cv2.COLORMAP_TURBO,
+    'VIRIDIS': cv2.COLORMAP_VIRIDIS,
+    'INFERNO': cv2.COLORMAP_INFERNO,
+}
+STEREO_MODES = {
+    'SGBM': cv2.STEREO_SGBM_MODE_SGBM,
+    '3WAY': cv2.STEREO_SGBM_MODE_SGBM_3WAY,
+}
 
 
 def decode_frame(upload):
@@ -74,23 +94,43 @@ def disparity():
         frame_right = cv2.resize(frame_right, (frame_left.shape[1], frame_left.shape[0]))
 
     with params_lock:
-        num_disparities = stereo_params['numDisparities']
-        block_size = stereo_params['blockSize']
+        params = stereo_params.copy()
 
-    if frame_left.shape[1] <= num_disparities + block_size:
+    if frame_left.shape[1] <= params['numDisparities'] + params['blockSize']:
         app.logger.warning(
             'disparity rejected width=%s num_disparities=%s block_size=%s',
-            frame_left.shape[1], num_disparities, block_size
+            frame_left.shape[1], params['numDisparities'], params['blockSize']
         )
         return jsonify({'error': 'The selected camera resolution is too narrow for these settings.'}), 400
 
     try:
         gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
         gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
-        stereo = cv2.StereoBM_create(numDisparities=num_disparities, blockSize=block_size)
-        disparity_map = stereo.compute(gray_left, gray_right)
-        disparity_gray = cv2.convertScaleAbs(disparity_map, alpha=255 / (num_disparities * 16))
-        color_disparity = cv2.applyColorMap(disparity_gray, cv2.COLORMAP_TURBO)
+        block_size = params['blockSize']
+        stereo = cv2.StereoSGBM_create(
+            minDisparity=params['minDisparity'],
+            numDisparities=params['numDisparities'],
+            blockSize=block_size,
+            P1=8 * block_size * block_size,
+            P2=32 * block_size * block_size,
+            disp12MaxDiff=params['disp12MaxDiff'],
+            preFilterCap=params['preFilterCap'],
+            uniquenessRatio=params['uniquenessRatio'],
+            speckleWindowSize=params['speckleWindowSize'],
+            speckleRange=params['speckleRange'],
+            mode=STEREO_MODES[params['mode']],
+        )
+        disparity_map = stereo.compute(gray_left, gray_right).astype(np.float32) / 16
+        valid = disparity_map > params['minDisparity']
+        disparity_gray = np.zeros(disparity_map.shape, dtype=np.uint8)
+        disparity_gray[valid] = np.clip(
+            (disparity_map[valid] - params['minDisparity'])
+            * (255 / params['numDisparities']),
+            0,
+            255,
+        ).astype(np.uint8)
+        color_disparity = cv2.applyColorMap(disparity_gray, COLOR_MAPS[params['colorMap']])
+        color_disparity[~valid] = (0, 0, 0)
         encoded, buffer = cv2.imencode('.jpg', color_disparity)
         if not encoded:
             app.logger.error('disparity JPEG encoding failed')
@@ -103,25 +143,55 @@ def disparity():
         'disparity success left_shape=%s right_shape=%s params=%s elapsed_ms=%.1f',
         frame_left.shape,
         frame_right.shape,
-        {'numDisparities': num_disparities, 'blockSize': block_size},
+        params,
         (time.perf_counter() - started) * 1000
     )
     return Response(buffer.tobytes(), mimetype='image/jpeg', headers={'Cache-Control': 'no-store'})
 
-@app.route('/api/calibrate', methods=['POST'])
+@app.route('/api/calibrate', methods=['GET', 'POST'])
 def calibrate():
+    if request.method == 'GET':
+        with params_lock:
+            params = stereo_params.copy()
+        return jsonify({'params': params})
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Calibration settings must be a JSON object.'}), 400
+    integer_ranges = {
+        'minDisparity': (-64, 64),
+        'numDisparities': (16, 256),
+        'blockSize': (3, 21),
+        'uniquenessRatio': (0, 30),
+        'speckleWindowSize': (0, 200),
+        'speckleRange': (0, 32),
+        'disp12MaxDiff': (-1, 64),
+        'preFilterCap': (1, 63),
+    }
+    with params_lock:
+        params = stereo_params.copy()
     try:
-        num_disparities = int(data.get('numDisparities', stereo_params['numDisparities']))
-        block_size = int(data.get('blockSize', stereo_params['blockSize']))
+        for name, (minimum, maximum) in integer_ranges.items():
+            raw_value = data.get(name, params[name])
+            if isinstance(raw_value, bool) or isinstance(raw_value, float):
+                return jsonify({'error': f'{name} must be an integer.'}), 400
+            value = int(raw_value)
+            if value < minimum or value > maximum:
+                return jsonify({'error': f'{name} must be between {minimum} and {maximum}.'}), 400
+            params[name] = value
     except (TypeError, ValueError):
         return jsonify({'error': 'Calibration values must be integers.'}), 400
-    if not 16 <= num_disparities <= 256 or num_disparities % 16:
-        return jsonify({'error': 'numDisparities must be a multiple of 16 between 16 and 256.'}), 400
-    if not 5 <= block_size <= 51 or block_size % 2 == 0:
-        return jsonify({'error': 'blockSize must be an odd number between 5 and 51.'}), 400
+    if params['numDisparities'] % 16:
+        return jsonify({'error': 'numDisparities must be a multiple of 16.'}), 400
+    if params['blockSize'] % 2 == 0:
+        return jsonify({'error': 'blockSize must be odd.'}), 400
+    params['mode'] = data.get('mode', params['mode'])
+    if not isinstance(params['mode'], str) or params['mode'] not in STEREO_MODES:
+        return jsonify({'error': 'mode must be SGBM or 3WAY.'}), 400
+    params['colorMap'] = data.get('colorMap', params['colorMap'])
+    if not isinstance(params['colorMap'], str) or params['colorMap'] not in COLOR_MAPS:
+        return jsonify({'error': 'colorMap must be TURBO, VIRIDIS, or INFERNO.'}), 400
     with params_lock:
-        stereo_params.update(numDisparities=num_disparities, blockSize=block_size)
+        stereo_params.update(params)
         params = stereo_params.copy()
     app.logger.info('stereo parameters updated params=%s', params)
     return jsonify({'status': 'success', 'params': params})

@@ -50,6 +50,7 @@
         .action-button.primary { border-color: var(--accent); color: #1c2414; background: var(--accent); }
         .action-button:hover:not(:disabled) { filter: brightness(1.08); }
         .action-button:disabled { cursor: wait; opacity: .55; }
+        .action-button:focus-visible, select:focus-visible, input:focus-visible, video:focus-visible, img:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         .workbench { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 18px; align-items: start; }
         .sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
         .panel { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
@@ -60,23 +61,35 @@
         video, .depth-image { display: block; width: 100%; height: 100%; object-fit: contain; }
         .placeholder { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; color: #869188; text-align: center; }
         video[hidden], .depth-image[hidden], .placeholder[hidden] { display: none; }
+        video, .depth-image { cursor: zoom-in; }
+        video:focus-visible, .depth-image:focus-visible { outline-offset: -4px; }
+        .view:fullscreen { width: 100vw; height: 100vh; max-height: none; aspect-ratio: auto; background: #080a08; }
+        .view:fullscreen video, .view:fullscreen .depth-image { object-fit: contain; }
         .placeholder b { color: #c3cdc4; font-size: 13px; font-weight: 600; }
         .placeholder span { font-size: 11px; }
         .camera-label { position: absolute; bottom: 10px; left: 10px; padding: 5px 8px; border: 1px solid #ffffff30; border-radius: 3px; color: white; background: #101411c9; font-size: 10px; text-transform: uppercase; }
-        .depth-panel .view { aspect-ratio: 4 / 6.25; }
+        .depth-panel .view { aspect-ratio: 4 / 3; max-height: min(70vh, 760px); }
         .depth-image { object-fit: contain; }
         .depth-placeholder { color: var(--muted); }
-        .settings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px; border-top: 1px solid var(--line); }
-        .setting { display: grid; gap: 9px; }
-        .setting-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; }
-        output { color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; }
-        input[type="range"] { width: 100%; height: 4px; accent-color: var(--accent); cursor: pointer; }
         .readout { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
         .readout strong { color: var(--text); font-weight: 550; }
         .notice { min-height: 20px; margin-top: 13px; color: var(--muted); font-size: 12px; }
+        dialog { width: min(680px, calc(100vw - 28px)); max-height: min(88vh, 820px); padding: 0; overflow: auto; border: 1px solid #536052; border-radius: 5px; color: var(--text); background: var(--panel); }
+        dialog::backdrop { background: #080a08c9; backdrop-filter: blur(3px); }
+        .settings-form { padding: 20px; }
+        .settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+        .settings-heading h3 { margin: 5px 0 0; font-size: 20px; font-weight: 600; }
+        .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 20px; padding: 20px 0; }
+        .setting { display: grid; min-width: 0; gap: 9px; }
+        .setting-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+        .setting output { color: var(--accent); font-size: 12px; font-variant-numeric: tabular-nums; }
+        input[type="range"] { width: 100%; height: 4px; accent-color: var(--accent); cursor: pointer; }
+        .settings-grid select { width: 100%; max-width: none; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 15px; border-top: 1px solid var(--line); }
+        .settings-error { min-height: 18px; margin: 0; color: var(--danger); font-size: 12px; }
         @media (max-width: 900px) {
             .workbench { grid-template-columns: 1fr; }
-            .depth-panel .view { aspect-ratio: 16 / 9; }
+            .depth-panel .view { aspect-ratio: 16 / 9; max-height: 72vh; }
         }
         @media (max-width: 620px) {
             .shell { padding: 18px 14px 32px; }
@@ -88,6 +101,8 @@
             .action-button { flex: 1; }
             .sources { grid-template-columns: 1fr; }
             .sources .view { aspect-ratio: 16 / 10; }
+            .settings-form { padding: 16px; }
+            .settings-grid { grid-template-columns: 1fr; gap: 16px; }
         }
     </style>
 </head>
@@ -105,6 +120,7 @@
                 <div class="title-block"><div class="section-kicker">Capture / disparity</div><h2>Stereo monitor</h2></div>
                 <div class="actions">
                     <button class="action-button" id="refreshCameraList" type="button">Refresh cameras</button>
+                    <button class="action-button" id="openSettings" type="button" disabled>Detailed settings</button>
                     <label class="select-wrap" for="leftCamera">Left<select id="leftCamera" aria-label="Left camera"></select></label>
                     <label class="select-wrap" for="rightCamera">Right<select id="rightCamera" aria-label="Right camera"></select></label>
                     <button class="action-button primary" id="toggleCapture" type="button">Connect cameras</button>
@@ -114,26 +130,47 @@
                 <div class="sources">
                     <article class="panel">
                         <div class="panel-head"><strong>Left camera</strong><span>INPUT 01</span></div>
-                        <div class="view"><video id="leftVideo" autoplay muted playsinline></video><div class="placeholder" id="leftPlaceholder"><b>Awaiting camera</b><span>Connect to begin capture</span></div><span class="camera-label">Left</span></div>
+                        <div class="view"><video id="leftVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open left camera full screen" title="Open full screen"></video><div class="placeholder" id="leftPlaceholder"><b>Awaiting camera</b><span>Connect to begin capture</span></div><span class="camera-label">Left</span></div>
                     </article>
                     <article class="panel">
                         <div class="panel-head"><strong>Right camera</strong><span>INPUT 02</span></div>
-                        <div class="view"><video id="rightVideo" autoplay muted playsinline></video><div class="placeholder" id="rightPlaceholder"><b>Awaiting camera</b><span>Connect to begin capture</span></div><span class="camera-label">Right</span></div>
+                        <div class="view"><video id="rightVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open right camera full screen" title="Open full screen"></video><div class="placeholder" id="rightPlaceholder"><b>Awaiting camera</b><span>Connect to begin capture</span></div><span class="camera-label">Right</span></div>
                     </article>
                 </div>
                 <article class="panel depth-panel">
-                    <div class="panel-head"><strong>Disparity map</strong><span>STEREO BM</span></div>
-                    <div class="view"><img class="depth-image" id="depthImage" alt="Live color-coded stereo disparity map" hidden><div class="placeholder depth-placeholder" id="depthPlaceholder"><b>Depth view is idle</b><span>Connect both cameras to calculate</span></div></div>
-                    <div class="settings">
-                        <label class="setting"><span class="setting-label">Disparities <output id="disparitiesValue">64</output></span><input id="numDisparities" type="range" min="16" max="128" step="16" value="64"></label>
-                        <label class="setting"><span class="setting-label">Block size <output id="blockSizeValue">15</output></span><input id="blockSize" type="range" min="5" max="31" step="2" value="15"></label>
-                    </div>
+                    <div class="panel-head"><strong>Disparity map</strong><span>STEREO SGBM</span></div>
+                    <div class="view"><img class="depth-image" id="depthImage" alt="Live color-coded stereo disparity map" hidden tabindex="0" role="button" title="Open full screen"><div class="placeholder depth-placeholder" id="depthPlaceholder"><b>Depth view is idle</b><span>Connect both cameras to calculate</span></div></div>
                     <div class="readout"><span>Processing</span><strong id="processingState">Ready</strong></div>
                 </article>
             </section>
             <div class="notice" id="notice" aria-live="polite">Select two cameras and connect to start a live depth feed.</div>
         </main>
     </div>
+    <dialog id="advancedSettings" aria-labelledby="settingsTitle">
+        <form class="settings-form" id="settingsForm">
+            <div class="settings-heading">
+                <div><div class="section-kicker">Stereo matching</div><h3 id="settingsTitle">Detailed settings</h3></div>
+                <button class="action-button" id="closeSettings" type="button">Close</button>
+            </div>
+            <div class="settings-grid">
+                <label class="setting"><span class="setting-label">Minimum disparity <output id="minDisparityValue">0</output></span><input id="minDisparity" type="range" min="-64" max="64" step="1" value="0"></label>
+                <label class="setting"><span class="setting-label">Disparity range <output id="numDisparitiesValue">64</output></span><input id="numDisparities" type="range" min="16" max="256" step="16" value="64"></label>
+                <label class="setting"><span class="setting-label">Block size <output id="blockSizeValue">5</output></span><input id="blockSize" type="range" min="3" max="21" step="2" value="5"></label>
+                <label class="setting"><span class="setting-label">Uniqueness ratio <output id="uniquenessRatioValue">10</output></span><input id="uniquenessRatio" type="range" min="0" max="30" step="1" value="10"></label>
+                <label class="setting"><span class="setting-label">Speckle window <output id="speckleWindowSizeValue">50</output></span><input id="speckleWindowSize" type="range" min="0" max="200" step="5" value="50"></label>
+                <label class="setting"><span class="setting-label">Speckle range <output id="speckleRangeValue">2</output></span><input id="speckleRange" type="range" min="0" max="32" step="1" value="2"></label>
+                <label class="setting"><span class="setting-label">Left-right max difference <output id="disp12MaxDiffValue">1</output></span><input id="disp12MaxDiff" type="range" min="-1" max="64" step="1" value="1"></label>
+                <label class="setting"><span class="setting-label">Pre-filter cap <output id="preFilterCapValue">31</output></span><input id="preFilterCap" type="range" min="1" max="63" step="2" value="31"></label>
+                <label class="setting"><span class="setting-label">Processing mode</span><select id="stereoMode"><option value="3WAY">SGBM 3-way</option><option value="SGBM">SGBM standard</option></select></label>
+                <label class="setting"><span class="setting-label">Depth palette</span><select id="colorMap"><option value="TURBO">Turbo</option><option value="VIRIDIS">Viridis</option><option value="INFERNO">Inferno</option></select></label>
+            </div>
+            <div class="modal-actions">
+                <p class="settings-error" id="settingsError" role="alert"></p>
+                <button class="action-button" id="cancelSettings" type="button">Cancel</button>
+                <button class="action-button primary" id="applySettings" type="submit">Apply settings</button>
+            </div>
+        </form>
+    </dialog>
     <script>
         const leftVideo = document.getElementById('leftVideo');
         const rightVideo = document.getElementById('rightVideo');
@@ -141,6 +178,8 @@
         const rightCamera = document.getElementById('rightCamera');
         const toggleCapture = document.getElementById('toggleCapture');
         const refreshCameraList = document.getElementById('refreshCameraList');
+        const advancedSettings = document.getElementById('advancedSettings');
+        const openSettings = document.getElementById('openSettings');
         const depthImage = document.getElementById('depthImage');
         const depthPlaceholder = document.getElementById('depthPlaceholder');
         const status = document.getElementById('status');
@@ -150,6 +189,18 @@
         let streams = [];
         let capturing = false;
         let previousImageUrl = null;
+        let appliedSettings = {
+            minDisparity: 0,
+            numDisparities: 64,
+            blockSize: 5,
+            uniquenessRatio: 10,
+            speckleWindowSize: 50,
+            speckleRange: 2,
+            disp12MaxDiff: 1,
+            preFilterCap: 31,
+            mode: '3WAY',
+            colorMap: 'TURBO'
+        };
 
         function setStatus(state, message) {
             status.dataset.state = state;
@@ -277,6 +328,8 @@
             streams = [];
             leftVideo.srcObject = null;
             rightVideo.srcObject = null;
+            leftVideo.hidden = true;
+            rightVideo.hidden = true;
             document.getElementById('leftPlaceholder').hidden = false;
             document.getElementById('rightPlaceholder').hidden = false;
             depthImage.hidden = true;
@@ -342,6 +395,8 @@
             streams.push(rightStream);
             leftVideo.srcObject = leftStream;
             rightVideo.srcObject = rightStream;
+            leftVideo.hidden = false;
+            rightVideo.hidden = false;
             await Promise.all([leftVideo.play(), rightVideo.play()]);
             await Promise.all([leftVideo, rightVideo].map(video => video.readyState >= 2
                 ? Promise.resolve()
@@ -373,19 +428,61 @@
             });
         }
 
+        const integerSettings = [
+            'minDisparity', 'numDisparities', 'blockSize', 'uniquenessRatio',
+            'speckleWindowSize', 'speckleRange', 'disp12MaxDiff', 'preFilterCap'
+        ];
+
+        function syncSettingOutputs() {
+            integerSettings.forEach(name => {
+                document.getElementById(`${name}Value`).value = document.getElementById(name).value;
+            });
+        }
+
+        function restoreAppliedSettings() {
+            integerSettings.forEach(name => {
+                document.getElementById(name).value = appliedSettings[name];
+            });
+            document.getElementById('stereoMode').value = appliedSettings.mode;
+            document.getElementById('colorMap').value = appliedSettings.colorMap;
+            syncSettingOutputs();
+        }
+
+        async function loadAppliedSettings() {
+            const response = await fetch('/api/calibrate');
+            if (!response.ok) throw new Error('Could not load the active stereo settings.');
+            const result = await response.json();
+            appliedSettings = result.params;
+            restoreAppliedSettings();
+        }
+
         async function updateCalibration() {
-            const params = {
-                numDisparities: Number(document.getElementById('numDisparities').value),
-                blockSize: Number(document.getElementById('blockSize').value)
-            };
-            document.getElementById('disparitiesValue').value = params.numDisparities;
-            document.getElementById('blockSizeValue').value = params.blockSize;
+            const params = Object.fromEntries(integerSettings.map(name => [
+                name,
+                Number(document.getElementById(name).value)
+            ]));
+            params.mode = document.getElementById('stereoMode').value;
+            params.colorMap = document.getElementById('colorMap').value;
             const response = await fetch('/api/calibrate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(params)
             });
-            if (!response.ok) notice.textContent = 'Could not update the stereo settings.';
+            if (!response.ok) {
+                const result = await response.json();
+                throw new Error(result.error || 'Could not update the stereo settings.');
+            }
+            return params;
+        }
+
+        async function toggleFullscreen(source) {
+            const view = source.closest('.view');
+            try {
+                if (document.fullscreenElement === view) await document.exitFullscreen();
+                else await view.requestFullscreen();
+            } catch (error) {
+                notice.textContent = `Could not open full screen: ${error.message}`;
+            }
         }
 
         toggleCapture.addEventListener('click', async () => {
@@ -426,9 +523,44 @@
             }));
         });
 
-        document.getElementById('numDisparities').addEventListener('input', updateCalibration);
-        document.getElementById('blockSize').addEventListener('input', updateCalibration);
-        updateCalibration();
+        [leftVideo, rightVideo, depthImage].forEach(source => {
+            source.addEventListener('click', () => toggleFullscreen(source));
+            source.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggleFullscreen(source);
+                }
+            });
+        });
+        integerSettings.forEach(name => document.getElementById(name).addEventListener('input', syncSettingOutputs));
+        openSettings.addEventListener('click', () => {
+            document.getElementById('settingsError').textContent = '';
+            restoreAppliedSettings();
+            advancedSettings.showModal();
+        });
+        document.getElementById('closeSettings').addEventListener('click', () => advancedSettings.close());
+        document.getElementById('cancelSettings').addEventListener('click', () => advancedSettings.close());
+        document.getElementById('settingsForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            const applyButton = document.getElementById('applySettings');
+            applyButton.disabled = true;
+            document.getElementById('settingsError').textContent = '';
+            try {
+                appliedSettings = await updateCalibration();
+                advancedSettings.close();
+                notice.textContent = 'Stereo matching settings applied.';
+            } catch (error) {
+                document.getElementById('settingsError').textContent = error.message;
+            } finally {
+                applyButton.disabled = false;
+            }
+        });
+        syncSettingOutputs();
+        loadAppliedSettings().then(() => {
+            openSettings.disabled = false;
+        }).catch(error => {
+            notice.textContent = error.message;
+        });
         refreshCameraList.disabled = true;
         refreshCameras().catch(error => {
             reportDiagnostic('camera_initialization_failed', {
