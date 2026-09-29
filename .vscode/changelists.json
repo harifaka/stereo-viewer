@@ -3,10 +3,12 @@
     {
       "name": "Default",
       "files": [
-        ".vscode/changelists.json",
         "app.py",
+        ".vscode/changelists.json",
         "templates/index.html",
-        "README.md"
+        "requirements.txt",
+        "README.md",
+        "ROADMAP.md"
       ]
     }
   ],

@@ -1,11 +1,15 @@
 import json
 import logging
+import math
 import time
+from io import BytesIO
 from threading import Lock
 
-from flask import Flask, render_template, Response, request, jsonify
+from flask import Flask, render_template, Response, request, jsonify, send_file
 import cv2
 import numpy as np
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,6 +30,9 @@ stereo_params = {
     'colorMap': 'TURBO',
 }
 params_lock = Lock()
+calibration_lock = Lock()
+calibration_state = {'captures': [], 'board': None, 'active': None}
+CALIBRATION_VIEWS_REQUIRED = 8
 COLOR_MAPS = {
     'TURBO': cv2.COLORMAP_TURBO,
     'VIRIDIS': cv2.COLORMAP_VIRIDIS,
@@ -84,12 +91,43 @@ def validate_calibration_params(data, current_params):
     return params
 
 
-def process_disparity(frame_left, frame_right, params):
+def estimate_point(disparity_map, x, y, active, params):
+    if not active or active['image_size'] != (disparity_map.shape[1], disparity_map.shape[0]):
+        return None, 'Calibrate this camera resolution before measuring distance.'
+    if x < 0 or y < 0 or x >= disparity_map.shape[1] or y >= disparity_map.shape[0]:
+        return None, 'Selected point is outside the disparity image.'
+    region = disparity_map[max(0, y - 2):y + 3, max(0, x - 2):x + 3]
+    valid = region[np.isfinite(region) & (region > params['minDisparity'])]
+    if valid.size < 3:
+        return None, 'No reliable stereo match at this point.'
+    disparity = float(np.median(valid))
+    homogeneous = active['q'] @ np.array([x, y, disparity, 1.0])
+    if abs(homogeneous[3]) < 1e-9:
+        return None, 'Distance is outside the calibrated range.'
+    point = homogeneous[:3] / homogeneous[3]
+    distance_m = float(np.linalg.norm(point) / 1000)
+    if not math.isfinite(distance_m) or distance_m <= 0:
+        return None, 'No reliable distance could be calculated at this point.'
+    return {'x': x, 'y': y, 'disparity': round(disparity, 2), 'distanceM': round(distance_m, 3)}, None
+
+
+def process_disparity(frame_left, frame_right, params, return_map=False, measurement_point=None):
     if frame_left.shape[:2] != frame_right.shape[:2]:
         frame_right = cv2.resize(frame_right, (frame_left.shape[1], frame_left.shape[0]))
 
     if frame_left.shape[1] <= params['numDisparities'] + params['blockSize']:
         return jsonify({'error': 'The selected camera resolution is too narrow for these settings.'}), 400
+
+    with calibration_lock:
+        active_calibration = calibration_state['active']
+        if active_calibration and active_calibration['image_size'] == (frame_left.shape[1], frame_left.shape[0]):
+            map_left = active_calibration['map_left']
+            map_right = active_calibration['map_right']
+        else:
+            map_left = map_right = None
+    if map_left is not None:
+        frame_left = cv2.remap(frame_left, map_left[0], map_left[1], cv2.INTER_LINEAR)
+        frame_right = cv2.remap(frame_right, map_right[0], map_right[1], cv2.INTER_LINEAR)
 
     try:
         gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
@@ -109,6 +147,13 @@ def process_disparity(frame_left, frame_right, params):
             mode=STEREO_MODES[params['mode']],
         )
         disparity_map = stereo.compute(gray_left, gray_right).astype(np.float32) / 16
+        if return_map:
+            return disparity_map
+        measurement = measurement_error = None
+        if measurement_point is not None:
+            measurement, measurement_error = estimate_point(
+                disparity_map, *measurement_point, active_calibration, params
+            )
         valid = disparity_map > params['minDisparity']
         disparity_gray = np.zeros(disparity_map.shape, dtype=np.uint8)
         disparity_gray[valid] = np.clip(
@@ -117,6 +162,7 @@ def process_disparity(frame_left, frame_right, params):
             0,
             255,
         ).astype(np.uint8)
+
         color_disparity = cv2.applyColorMap(disparity_gray, COLOR_MAPS[params['colorMap']])
         color_disparity[~valid] = (0, 0, 0)
         encoded, buffer = cv2.imencode('.jpg', color_disparity)
@@ -127,7 +173,244 @@ def process_disparity(frame_left, frame_right, params):
         app.logger.exception('disparity processing failed')
         return jsonify({'error': 'Stereo image processing failed; see container logs.'}), 500
 
-    return Response(buffer.tobytes(), mimetype='image/jpeg', headers={'Cache-Control': 'no-store'})
+    headers = {'Cache-Control': 'no-store'}
+    if measurement_point is not None:
+        headers['X-Measurement'] = json.dumps({'measurement': measurement, 'error': measurement_error})
+    return Response(buffer.tobytes(), mimetype='image/jpeg', headers=headers)
+
+
+def calibration_status():
+    with calibration_lock:
+        active = calibration_state['active']
+        result = {
+            'captures': len(calibration_state['captures']),
+            'requiredCaptures': CALIBRATION_VIEWS_REQUIRED,
+            'calibrated': active is not None,
+        }
+        if active:
+            result.update({
+                'imageSize': list(active['image_size']),
+                'baselineMm': round(active['baseline_mm'], 2),
+                'focalLengthPx': round(active['focal_length_px'], 2),
+                'squareSizeMm': active['square_size_mm'],
+                'columns': active['columns'],
+                'rows': active['rows'],
+            })
+        return result
+
+
+def build_stereo_calibration(captures, board, image_size):
+    columns, rows, square_size_mm = board
+    object_points = np.zeros((rows * columns, 3), np.float32)
+    object_points[:, :2] = np.mgrid[0:columns, 0:rows].T.reshape(-1, 2) * square_size_mm
+    object_sets = [object_points.copy() for _ in captures]
+    left_sets = [capture[0] for capture in captures]
+    right_sets = [capture[1] for capture in captures]
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-5)
+    _, camera_left, distortion_left, _, _ = cv2.calibrateCamera(
+        object_sets, left_sets, image_size, None, None
+    )
+    _, camera_right, distortion_right, _, _ = cv2.calibrateCamera(
+        object_sets, right_sets, image_size, None, None
+    )
+    _, camera_left, distortion_left, camera_right, distortion_right, rotation, translation, _, _ = cv2.stereoCalibrate(
+        object_sets,
+        left_sets,
+        right_sets,
+        camera_left,
+        distortion_left,
+        camera_right,
+        distortion_right,
+        image_size,
+        criteria=criteria,
+        flags=cv2.CALIB_FIX_INTRINSIC,
+    )
+    rect_left, rect_right, projection_left, projection_right, reprojection, _, _ = cv2.stereoRectify(
+        camera_left,
+        distortion_left,
+        camera_right,
+        distortion_right,
+        image_size,
+        rotation,
+        translation,
+        flags=cv2.CALIB_ZERO_DISPARITY,
+        alpha=0,
+    )
+    map_left = cv2.initUndistortRectifyMap(
+        camera_left, distortion_left, rect_left, projection_left, image_size, cv2.CV_32FC1
+    )
+    map_right = cv2.initUndistortRectifyMap(
+        camera_right, distortion_right, rect_right, projection_right, image_size, cv2.CV_32FC1
+    )
+    return {
+        'image_size': image_size,
+        'map_left': map_left,
+        'map_right': map_right,
+        'q': reprojection,
+        'baseline_mm': float(np.linalg.norm(translation)),
+        'focal_length_px': float(projection_left[0, 0]),
+        'square_size_mm': square_size_mm,
+        'columns': columns,
+        'rows': rows,
+    }
+
+
+@app.route('/api/stereo-calibration', methods=['GET', 'POST', 'DELETE'])
+def stereo_calibration():
+    if request.method == 'GET':
+        return jsonify(calibration_status())
+    if request.method == 'DELETE':
+        with calibration_lock:
+            calibration_state.update({'captures': [], 'board': None, 'active': None})
+        return jsonify(calibration_status())
+
+    frame_left = decode_frame(request.files.get('left'))
+    frame_right = decode_frame(request.files.get('right'))
+    if frame_left is None or frame_right is None:
+        return jsonify({'error': 'Upload a valid image from each camera.'}), 400
+    try:
+        columns = int(request.form.get('columns', '9'))
+        rows = int(request.form.get('rows', '6'))
+        square_size_mm = float(request.form.get('squareSizeMm', '25'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Board dimensions and square size must be numeric.'}), 400
+    if not (4 <= columns <= 15 and 4 <= rows <= 12 and math.isfinite(square_size_mm) and 5 <= square_size_mm <= 100):
+        return jsonify({'error': 'Use 4-15 columns, 4-12 rows, and a square size from 5-100 mm.'}), 400
+    if frame_left.shape[:2] != frame_right.shape[:2]:
+        return jsonify({'error': 'Both camera frames must have the same resolution.'}), 400
+
+    board = (columns, rows, square_size_mm)
+    gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
+    gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
+    pattern_size = (columns, rows)
+    flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+    found_left, corners_left = cv2.findChessboardCorners(gray_left, pattern_size, flags)
+    found_right, corners_right = cv2.findChessboardCorners(gray_right, pattern_size, flags)
+    if not found_left or not found_right:
+        return jsonify({'error': 'Chessboard not found in both camera views. Keep the full board visible and well lit.'}), 422
+    refine = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    corners_left = cv2.cornerSubPix(gray_left, corners_left, (11, 11), (-1, -1), refine)
+    corners_right = cv2.cornerSubPix(gray_right, corners_right, (11, 11), (-1, -1), refine)
+    image_size = (frame_left.shape[1], frame_left.shape[0])
+    with calibration_lock:
+        if calibration_state['board'] != board or calibration_state['captures'] and calibration_state['captures'][0][2] != image_size:
+            calibration_state.update({'captures': [], 'board': board, 'active': None})
+        calibration_state['board'] = board
+        calibration_state['captures'].append((corners_left, corners_right, image_size))
+        captures = calibration_state['captures'][:]
+
+    calibrated = False
+    calibration_error = None
+    if len(captures) >= CALIBRATION_VIEWS_REQUIRED:
+        try:
+            active = build_stereo_calibration(
+                [(left, right) for left, right, _ in captures], board, image_size
+            )
+            with calibration_lock:
+                calibration_state['active'] = active
+            calibrated = True
+        except cv2.error as error:
+            calibration_error = str(error).splitlines()[0]
+            app.logger.warning('stereo calibration failed: %s', calibration_error)
+
+    status = calibration_status()
+    status['accepted'] = True
+    status['calibrated'] = calibrated or status['calibrated']
+    if calibration_error:
+        status['calibrationError'] = calibration_error
+    return jsonify(status)
+
+
+@app.route('/api/measure', methods=['POST'])
+def measure_point():
+    frame_left = decode_frame(request.files.get('left'))
+    frame_right = decode_frame(request.files.get('right'))
+    if frame_left is None or frame_right is None:
+        return jsonify({'error': 'Upload a valid image from each camera.'}), 400
+    try:
+        x = int(request.form['x'])
+        y = int(request.form['y'])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': 'Select a point on the disparity map.'}), 400
+    with calibration_lock:
+        active = calibration_state['active']
+    if not active or active['image_size'] != (frame_left.shape[1], frame_left.shape[0]):
+        return jsonify({'error': 'Calibrate this camera resolution before measuring distance.'}), 409
+    with params_lock:
+        params = stereo_params.copy()
+    disparity_map = process_disparity(frame_left, frame_right, params, return_map=True)
+    if isinstance(disparity_map, tuple):
+        return disparity_map
+    if x < 0 or y < 0 or x >= disparity_map.shape[1] or y >= disparity_map.shape[0]:
+        return jsonify({'error': 'Selected point is outside the disparity image.'}), 400
+    measurement, error = estimate_point(disparity_map, x, y, active, params)
+    if error:
+        return jsonify({'error': error}), 422
+    return jsonify(measurement)
+
+
+def calibration_target_parameters():
+    try:
+        columns = int(request.args.get('columns', '9'))
+        rows = int(request.args.get('rows', '6'))
+        square_size_mm = float(request.args.get('squareSizeMm', '18'))
+    except ValueError:
+        raise ValueError('Target dimensions must be numeric.') from None
+    if not (4 <= columns <= 15 and 4 <= rows <= 12 and math.isfinite(square_size_mm) and 5 <= square_size_mm <= 100):
+        raise ValueError('Target dimensions are outside supported bounds.')
+    return columns, rows, square_size_mm
+
+
+@app.route('/calibration-target.svg')
+def calibration_target():
+    try:
+        columns, rows, square_size_mm = calibration_target_parameters()
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    square_columns, square_rows = columns + 1, rows + 1
+    width_mm, height_mm = square_columns * square_size_mm, square_rows * square_size_mm
+    squares = ''.join(
+        f'<rect x="{column * square_size_mm}" y="{row * square_size_mm}" width="{square_size_mm}" height="{square_size_mm}" fill="#111"/>'
+        for row in range(square_rows) for column in range(square_columns)
+        if (row + column) % 2 == 0
+    )
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width_mm}mm" height="{height_mm}mm" '
+        f'viewBox="0 0 {width_mm} {height_mm}"><rect width="100%" height="100%" fill="white"/>{squares}</svg>'
+    )
+    return Response(svg, mimetype='image/svg+xml', headers={'Cache-Control': 'no-store'})
+
+
+@app.route('/calibration-target.pdf')
+def calibration_target_pdf():
+    try:
+        columns, rows, square_size_mm = calibration_target_parameters()
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    square_columns, square_rows = columns + 1, rows + 1
+    page_width = square_columns * square_size_mm * mm
+    page_height = square_rows * square_size_mm * mm
+    output = BytesIO()
+    document = canvas.Canvas(output, pagesize=(page_width, page_height), pageCompression=1)
+    document.setTitle('Stereo calibration checkerboard')
+    document.setFillColorRGB(1, 1, 1)
+    document.rect(0, 0, page_width, page_height, fill=1, stroke=0)
+    document.setFillColorRGB(0, 0, 0)
+    square = square_size_mm * mm
+    for row in range(square_rows):
+        for column in range(square_columns):
+            if (row + column) % 2 == 0:
+                document.rect(column * square, (square_rows - row - 1) * square, square, square, fill=1, stroke=0)
+    document.showPage()
+    document.save()
+    output.seek(0)
+    return send_file(
+        output,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name='stereo-calibration-target.pdf',
+        max_age=0,
+    )
 
 
 @app.route('/api/client-log', methods=['POST'])
@@ -191,7 +474,13 @@ def disparity():
     else:
         params = current_params
 
-    result = process_disparity(frame_left, frame_right, params)
+    measurement_point = None
+    if not is_preview and ('measureX' in request.form or 'measureY' in request.form):
+        try:
+            measurement_point = (int(request.form['measureX']), int(request.form['measureY']))
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'error': 'Measurement coordinates must be integers.'}), 400
+    result = process_disparity(frame_left, frame_right, params, measurement_point=measurement_point)
     if isinstance(result, tuple):
         return result
 

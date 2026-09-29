@@ -24,14 +24,13 @@ This document outlines the development roadmap for a Dockerized stereoscopic vis
 ## Phase 2: Enhanced Depth, UX, & AI Integration (V3)
 **Goal:** Upgrade the depth map with interactive features, AI object detection, and better calibration techniques.
 
-- [ ] **Automatic Checkerboard Calibration**
-  - Build an admin UI to capture checkerboard patterns.
-  - Implement `cv2.findChessboardCorners` and calculate camera matrices, distortion coefficients, and rectification transforms.
-  - Apply stereo rectification to incoming frames before depth calculation for a much cleaner disparity map.
-- [ ] **Interactive Distance Measurement**
-  - Add click-event listener on the frontend video feed.
-  - Send X,Y coordinates to backend.
-  - Backend reads the specific disparity pixel, calculates real-world distance (Z = (focal_length * baseline) / disparity), and returns it to the UI (Virtual Tape Measure).
+- [x] **Automatic Checkerboard Calibration**
+  - Add a settings modal with a printable, downloadable PDF and phone-displayable checkerboard.
+  - Estimate camera intrinsics, stereo geometry, baseline, and rectification maps from eight or more varied views.
+  - Rectify incoming frames before disparity calculation at the calibrated resolution.
+- [x] **Interactive Distance Measurement**
+  - Add a selectable point overlay on the live disparity map.
+  - Reuse each disparity calculation to report calibrated metric distance and local disparity for the selected point.
 - [ ] **AI Object Detection with Depth (YOLOv8)**
   - Integrate `ultralytics` YOLOv8 Nano for real-time bounding box generation.
   - Extract the average or center disparity value inside the bounding box.

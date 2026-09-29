@@ -74,6 +74,8 @@
         .camera-label { position: absolute; bottom: 10px; left: 10px; padding: 5px 8px; border: 1px solid #ffffff30; border-radius: 3px; color: white; background: #101411c9; font-size: 10px; text-transform: uppercase; }
         .depth-panel .view { aspect-ratio: 4 / 3; max-height: min(70vh, 760px); }
         .depth-image { object-fit: contain; }
+        .measurement-overlay { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: manipulation; }
+        .measurement-overlay[hidden] { display: none; }
         .depth-placeholder { color: var(--muted); }
         .readout { display: flex; justify-content: space-between; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
         .readout strong { color: var(--text); font-weight: 550; }
@@ -105,6 +107,21 @@
         .preview-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px; border-top: 1px solid var(--line); }
         .preview-actions .action-button { min-height: 36px; padding: 0 12px; font-size: 11px; }
         .preview-hint { margin: 0; color: var(--muted); font-size: 10px; }
+        #cameraCalibration { width: min(900px, calc(100vw - 28px)); }
+        .calibration-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .9fr); gap: 20px; padding: 20px 0; }
+        .target-preview { display: grid; min-height: 300px; place-items: center; overflow: auto; border: 1px solid var(--line); background: #fff; }
+        .target-preview img { display: block; width: min(100%, 430px); height: auto; cursor: zoom-in; image-rendering: pixelated; }
+        .target-preview img:fullscreen { width: auto; height: auto; max-width: 100vw; max-height: 100vh; background: #fff; object-fit: contain; cursor: zoom-out; }
+        .calibration-fields { display: grid; align-content: start; gap: 14px; }
+        .calibration-fields label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+        .calibration-fields input { width: 100%; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171b18; }
+        .target-url { display: flex; gap: 7px; }
+        .target-url input { min-width: 0; }
+        .target-url .action-button { padding: 0 10px; }
+        .calibration-note, .calibration-status { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+        .calibration-status { color: var(--accent); }
+        .calibration-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+        .calibration-actions .action-button { flex: 1 1 auto; }
         @media (max-width: 900px) {
             .workbench { grid-template-columns: 1fr; }
             .depth-panel .view { aspect-ratio: 16 / 9; max-height: 72vh; }
@@ -125,6 +142,8 @@
             .settings-layout { grid-template-columns: 1fr; gap: 18px; }
             .settings-grid { padding: 0; }
             .preview-view { aspect-ratio: 16 / 10; }
+            .calibration-content { grid-template-columns: 1fr; }
+            .target-preview { min-height: 230px; }
         }
     </style>
 </head>
@@ -167,8 +186,8 @@
                 </div>
                 <article class="panel depth-panel">
                     <div class="panel-head"><strong data-i18n="disparityMap">Disparity map</strong><span>STEREO SGBM</span></div>
-                    <div class="view"><img class="depth-image" id="depthImage" alt="Live color-coded stereo disparity map" data-i18n-alt="disparityAlt" hidden tabindex="0" role="button" title="Open full screen" data-i18n-title="openFullscreen"><div class="placeholder depth-placeholder" id="depthPlaceholder"><b data-i18n="depthIdle">Depth view is idle</b><span data-i18n="connectBothCalculate">Connect both cameras to calculate</span></div></div>
-                    <div class="readout"><span data-i18n="processing">Processing</span><strong id="processingState" data-i18n="ready">Ready</strong></div>
+                    <div class="view"><img class="depth-image" id="depthImage" alt="Live color-coded stereo disparity map" data-i18n-alt="disparityAlt" hidden tabindex="0" role="button" title="Open full screen" data-i18n-title="openFullscreen"><canvas class="measurement-overlay" id="measurementOverlay" hidden aria-label="Select a point to measure distance" data-i18n-aria="measurementOverlayLabel"></canvas><div class="placeholder depth-placeholder" id="depthPlaceholder"><b data-i18n="depthIdle">Depth view is idle</b><span data-i18n="connectBothCalculate">Connect both cameras to calculate</span></div></div>
+                    <div class="readout"><span data-i18n="measurement">Point distance</span><strong id="measurementReadout" data-i18n="measurementPrompt">Click the map to measure</strong><span data-i18n="processing">Processing</span><strong id="processingState" data-i18n="ready">Ready</strong></div>
                 </article>
             </section>
             <div class="notice" id="notice" aria-live="polite" data-i18n="selectTwoCameras">Select two cameras and connect to start a live depth feed.</div>
@@ -178,7 +197,7 @@
         <form class="settings-form" id="settingsForm">
             <div class="settings-heading">
                 <div class="settings-heading-copy"><div class="section-kicker" data-i18n="stereoMatching">Stereo matching</div><h3 id="settingsTitle" data-i18n="detailedSettings">Detailed settings</h3><p class="settings-intro" data-i18n="settingsIntro">Tune how matching finds corresponding image details. Use the preview to compare changes; Apply saves them, while Cancel discards the draft.</p></div>
-                <button class="action-button" id="closeSettings" type="button" data-i18n="close">Close</button>
+                <div class="actions"><button class="action-button" id="openCameraCalibration" type="button" data-i18n="cameraCalibration">Camera calibration</button><button class="action-button" id="closeSettings" type="button" data-i18n="close">Close</button></div>
             </div>
             <div class="settings-layout">
                 <div class="settings-grid">
@@ -206,6 +225,30 @@
             </div>
         </form>
     </dialog>
+    <dialog id="cameraCalibration" aria-labelledby="calibrationTitle">
+        <form class="settings-form" id="calibrationForm">
+            <div class="settings-heading">
+                <div class="settings-heading-copy"><div class="section-kicker" data-i18n="stereoCalibration">Stereo calibration</div><h3 id="calibrationTitle" data-i18n="checkerboardCalibration">Checkerboard calibration</h3><p class="settings-intro" data-i18n="calibrationIntro">Capture the same checkerboard in both cameras from at least eight different positions. Accepted views build rectification and metric depth calibration.</p></div>
+                <button class="action-button" id="closeCalibration" type="button" data-i18n="close">Close</button>
+            </div>
+            <div class="calibration-content">
+                <div class="calibration-fields">
+                    <label><span data-i18n="innerCornersColumns">Inner corners across</span><input id="boardColumns" type="number" min="4" max="15" value="9"></label>
+                    <label><span data-i18n="innerCornersRows">Inner corners down</span><input id="boardRows" type="number" min="4" max="12" value="6"></label>
+                    <label><span data-i18n="squareSize">Square size (mm)</span><input id="squareSizeMm" type="number" min="5" max="100" step="0.1" value="18"></label>
+                    <p class="calibration-note" data-i18n="calibrationTargetTip">Print at actual size, or show the pattern full-screen on a phone. For a screen, measure one displayed square with a ruler and enter that real size.</p>
+                    <div class="target-url"><input id="mobileTargetUrl" aria-label="Phone target URL" data-i18n-aria="phoneTargetUrl" type="url" spellcheck="false"><button class="action-button" id="copyTargetUrl" type="button" data-i18n="copy">Copy</button></div>
+                    <div class="calibration-actions"><a class="action-button" id="openPhoneTarget" href="/calibration-target.svg" target="_blank" rel="noopener" data-i18n="openTarget">Open target</a><a class="action-button" id="downloadTargetPdf" href="/calibration-target.pdf" download data-i18n="downloadPdf">Download PDF</a><button class="action-button" id="fullscreenTarget" type="button" data-i18n="fullscreenTarget">Full-screen target</button><button class="action-button" id="printTarget" type="button" data-i18n="printTarget">Print target</button></div>
+                    <p class="calibration-note" data-i18n="phoneNetworkTip">For phone access, replace localhost with this PC's local network address, and keep both devices on the same Wi-Fi.</p>
+                    <p class="calibration-status" id="calibrationStatus" role="status" data-i18n="calibrationNotStarted">No calibration views captured.</p>
+                    <p class="settings-error" id="calibrationError" role="alert"></p>
+                    <div class="calibration-actions"><button class="action-button primary" id="captureCalibration" type="button" disabled data-i18n="captureBoardView">Capture board view</button><button class="action-button" id="resetCalibration" type="button" data-i18n="resetCalibration">Reset calibration</button></div>
+                </div>
+                <div class="target-preview"><img id="checkerboardTarget" src="/calibration-target.svg" alt="Printable stereo calibration checkerboard" data-i18n-alt="checkerboardAlt" title="Open full screen" data-i18n-title="openFullscreen" tabindex="0" role="button"></div>
+            </div>
+            <div class="modal-actions"><button class="action-button" id="doneCalibration" type="button" data-i18n="done">Done</button></div>
+        </form>
+    </dialog>
     <script>
         const leftVideo = document.getElementById('leftVideo');
         const rightVideo = document.getElementById('rightVideo');
@@ -225,6 +268,11 @@
         const previewPlaceholder = document.getElementById('previewPlaceholder');
         const previewState = document.getElementById('previewState');
         const togglePreview = document.getElementById('togglePreview');
+        const measurementOverlay = document.getElementById('measurementOverlay');
+        const measurementReadout = document.getElementById('measurementReadout');
+        const cameraCalibration = document.getElementById('cameraCalibration');
+        const checkerboardTarget = document.getElementById('checkerboardTarget');
+        const mobileTargetUrl = document.getElementById('mobileTargetUrl');
         const translations = {
             liveDepthWorkstation: ['Live depth workstation', 'Valós idejű mélységmérés'], camerasDisconnected: ['Cameras disconnected', 'A kamerák nincsenek csatlakoztatva'],
             captureDisparity: ['Capture / disparity', 'Felvétel / parallaxis'], stereoMonitor: ['Stereo monitor', 'Sztereó monitor'], refreshCameras: ['Refresh cameras', 'Kamerák frissítése'], detailedSettings: ['Detailed settings', 'Részletes beállítások'],
@@ -233,6 +281,18 @@
             workbenchLabel: ['Stereo camera feeds and depth output', 'Sztereó kameraképek és mélységtérkép'], leftCameraLabel: ['Left camera', 'Bal kamera'], rightCameraLabel: ['Right camera', 'Jobb kamera'],
             openLeftFullscreen: ['Open left camera full screen', 'Bal kamera megnyitása teljes képernyőn'], openRightFullscreen: ['Open right camera full screen', 'Jobb kamera megnyitása teljes képernyőn'], openFullscreen: ['Open full screen', 'Teljes képernyő megnyitása'],
             awaitingCamera: ['Awaiting camera', 'Várakozás a kamerára'], connectBeginCapture: ['Connect to begin capture', 'Csatlakozz a felvétel indításához'], disparityMap: ['Disparity map', 'Parallaxis-térkép'], disparityAlt: ['Live color-coded stereo disparity map', 'Valós idejű, színkódolt sztereó parallaxis-térkép'],
+            measurement: ['Point distance', 'Pont távolsága'], measurementPrompt: ['Click the map to measure', 'Kattints a térképre a méréshez'], measurementOverlayLabel: ['Select a point to measure distance', 'Válassz pontot a távolság méréséhez'],
+                        measurementCalculating: ['Calculating…', 'Számítás…'],
+            cameraCalibration: ['Camera calibration', 'Kamerakalibrálás'], stereoCalibration: ['Stereo calibration', 'Sztereó kalibrálás'], checkerboardCalibration: ['Checkerboard calibration', 'Sakktáblás kalibrálás'],
+            calibrationIntro: ['Capture the same checkerboard in both cameras from at least eight different positions. Accepted views build rectification and metric depth calibration.', 'Rögzítsd ugyanazt a sakktáblát mindkét kamerával legalább nyolc különböző helyzetből. Az elfogadott nézetekből geometriai korrekció és metrikus mélységkalibráció készül.'],
+            innerCornersColumns: ['Inner corners across', 'Belső sarkok vízszintesen'], innerCornersRows: ['Inner corners down', 'Belső sarkok függőlegesen'], squareSize: ['Square size (mm)', 'Négyzetméret (mm)'],
+            calibrationTargetTip: ['Print at actual size, or show the pattern full-screen on a phone. For a screen, measure one displayed square with a ruler and enter that real size.', 'Nyomtasd tényleges méretben, vagy jelenítsd meg teljes képernyőn telefonon. Kijelzőnél mérd meg vonalzóval a négyzet tényleges méretét, és azt add meg.'],
+            phoneTargetUrl: ['Phone target URL', 'Telefonos céltábla URL-je'], copy: ['Copy', 'Másolás'], openTarget: ['Open target', 'Céltábla megnyitása'], downloadPdf: ['Download PDF', 'PDF letöltése'], fullscreenTarget: ['Full-screen target', 'Céltábla teljes képernyőn'], printTarget: ['Print target', 'Céltábla nyomtatása'],
+            phoneNetworkTip: ["For phone access, replace localhost with this PC's local network address, and keep both devices on the same Wi-Fi.", 'Telefonos eléréshez cseréld a localhost címet a PC helyi hálózati címére, és csatlakozz mindkét eszközzel ugyanahhoz a Wi-Fi-hálózathoz.'],
+            calibrationNotStarted: ['No calibration views captured.', 'Még nincs rögzített kalibrációs nézet.'], captureBoardView: ['Capture board view', 'Táblanézet rögzítése'], resetCalibration: ['Reset calibration', 'Kalibráció törlése'], done: ['Done', 'Kész'],
+            calibrationProgress: ['{count} of {required} views captured', '{count}/{required} nézet rögzítve'], calibrationReady: ['Calibrated: baseline {baseline} mm, image {width} × {height}.', 'Kalibrálva: bázistávolság {baseline} mm, kép {width} × {height}.'], calibrationWaiting: ['Calibration needs {remaining} more views.', 'A kalibrációhoz még {remaining} nézet szükséges.'],
+            captureNeedsCameras: ['Connect both cameras before capturing calibration views.', 'Kalibrációs nézetek rögzítéséhez csatlakoztasd mindkét kamerát.'], capturedView: ['Board view captured.', 'Táblanézet rögzítve.'], copiedTargetUrl: ['Phone target URL copied.', 'A telefonos céltábla URL-je másolva.'],
+            calibrationResetDone: ['Calibration data reset.', 'A kalibrációs adatok törölve.'], checkerboardAlt: ['Printable stereo calibration checkerboard', 'Nyomtatható sztereó kalibrációs sakktábla'],
             depthIdle: ['Depth view is idle', 'A mélységnézet inaktív'], connectBothCalculate: ['Connect both cameras to calculate', 'A számításhoz csatlakoztasd mindkét kamerát'], processing: ['Processing', 'Feldolgozás'], ready: ['Ready', 'Kész'],
             selectTwoCameras: ['Select two cameras and connect to start a live depth feed.', 'Válassz ki két kamerát, majd csatlakozz az élő mélységtérkép indításához.'], stereoMatching: ['Stereo matching', 'Sztereó illesztés'],
             settingsIntro: ['Tune how matching finds corresponding image details. Use the preview to compare changes; Apply saves them, while Cancel discards the draft.', 'Állítsd be a képrészletek párosítását. Az előnézetben összehasonlíthatod a módosításokat; az Alkalmaz menti, a Mégse elveti a piszkozatot.'], close: ['Close', 'Bezárás'],
@@ -448,6 +508,7 @@
 
         function stopCapture() {
             capturing = false;
+            document.getElementById('captureCalibration').disabled = true;
             stopSettingsPreview();
             streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
             streams = [];
@@ -458,9 +519,13 @@
             document.getElementById('leftPlaceholder').hidden = false;
             document.getElementById('rightPlaceholder').hidden = false;
             depthImage.hidden = true;
+            measurementOverlay.hidden = true;
+            selectedMeasurement = null;
+            measurementReadout.textContent = translate('measurementPrompt');
             depthPlaceholder.hidden = false;
             if (previousImageUrl) URL.revokeObjectURL(previousImageUrl);
             previousImageUrl = null;
+                let selectedMeasurement = null;
             leftCamera.disabled = false;
             rightCamera.disabled = false;
             refreshCameraList.disabled = false;
@@ -477,6 +542,116 @@
             canvas.height = video.videoHeight;
             canvas.getContext('2d').drawImage(video, 0, 0);
             return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+        }
+
+        function calibrationTargetUrl() {
+            const target = new URL('/calibration-target.svg', location.origin);
+            target.search = new URLSearchParams({
+                columns: document.getElementById('boardColumns').value,
+                rows: document.getElementById('boardRows').value,
+                squareSizeMm: document.getElementById('squareSizeMm').value
+            });
+            return target;
+        }
+
+        function updateCalibrationTarget() {
+            const target = calibrationTargetUrl();
+            checkerboardTarget.src = `${target.href}&v=${Date.now()}`;
+            const pdfTarget = new URL('/calibration-target.pdf', location.origin);
+            pdfTarget.search = target.search;
+            document.getElementById('downloadTargetPdf').href = pdfTarget.href;
+            const enteredUrl = mobileTargetUrl.value.trim();
+            if (enteredUrl) {
+                try {
+                    const edited = new URL(enteredUrl);
+                    target.protocol = edited.protocol;
+                    target.host = edited.host;
+                } catch (error) {
+                    mobileTargetUrl.value = target.href;
+                }
+            }
+            mobileTargetUrl.value = target.href;
+            document.getElementById('openPhoneTarget').href = target.href;
+        }
+
+        function updateCalibrationStatus(result) {
+            const status = document.getElementById('calibrationStatus');
+            if (result.calibrated) {
+                status.textContent = translate('calibrationReady', {
+                    baseline: result.baselineMm,
+                    width: result.imageSize[0],
+                    height: result.imageSize[1]
+                });
+            } else if (result.captures) {
+                status.textContent = `${translate('calibrationProgress', { count: result.captures, required: result.requiredCaptures })}. ${translate('calibrationWaiting', { remaining: Math.max(0, result.requiredCaptures - result.captures) })}`;
+            } else {
+                status.textContent = translate('calibrationNotStarted');
+            }
+            document.getElementById('captureCalibration').disabled = !capturing;
+        }
+
+        async function refreshCalibrationStatus() {
+            const response = await fetch('/api/stereo-calibration');
+            if (!response.ok) throw new Error('Could not load stereo calibration status.');
+            updateCalibrationStatus(await response.json());
+        }
+
+        async function captureCalibrationView() {
+            if (!capturing) throw new Error(translate('captureNeedsCameras'));
+            const [leftBlob, rightBlob] = await Promise.all([canvasBlob(leftVideo), canvasBlob(rightVideo)]);
+            if (!leftBlob || !rightBlob) throw new Error(translate('captureNeedsCameras'));
+            const form = new FormData();
+            form.append('left', leftBlob, 'left.jpg');
+            form.append('right', rightBlob, 'right.jpg');
+            form.append('columns', document.getElementById('boardColumns').value);
+            form.append('rows', document.getElementById('boardRows').value);
+            form.append('squareSizeMm', document.getElementById('squareSizeMm').value);
+            const response = await fetch('/api/stereo-calibration', { method: 'POST', body: form });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Calibration capture failed.');
+            updateCalibrationStatus(result);
+            document.getElementById('calibrationError').textContent = result.calibrationError || '';
+        }
+
+        function drawMeasurementMarker() {
+            if (!selectedMeasurement || depthImage.hidden || !depthImage.naturalWidth) return;
+            const bounds = measurementOverlay.getBoundingClientRect();
+            const ratio = window.devicePixelRatio || 1;
+            measurementOverlay.width = Math.round(bounds.width * ratio);
+            measurementOverlay.height = Math.round(bounds.height * ratio);
+            const context = measurementOverlay.getContext('2d');
+            context.scale(ratio, ratio);
+            const scale = Math.min(bounds.width / depthImage.naturalWidth, bounds.height / depthImage.naturalHeight);
+            const offsetX = (bounds.width - depthImage.naturalWidth * scale) / 2;
+            const offsetY = (bounds.height - depthImage.naturalHeight * scale) / 2;
+            const x = offsetX + selectedMeasurement.x * scale;
+            const y = offsetY + selectedMeasurement.y * scale;
+            context.strokeStyle = '#ffffff';
+            context.lineWidth = 2;
+            context.beginPath();
+            context.arc(x, y, 8, 0, Math.PI * 2);
+            context.moveTo(x - 12, y);
+            context.lineTo(x + 12, y);
+            context.moveTo(x, y - 12);
+            context.lineTo(x, y + 12);
+            context.stroke();
+        }
+
+        async function toggleTargetFullscreen() {
+            try {
+                if (document.fullscreenElement === checkerboardTarget) await document.exitFullscreen();
+                else await checkerboardTarget.requestFullscreen();
+            } catch (error) {
+                document.getElementById('calibrationError').textContent = error.message;
+            }
+        }
+
+        function setMeasurementReadout(result) {
+            if (result.error) {
+                measurementReadout.textContent = result.error;
+            } else if (result.measurement) {
+                measurementReadout.textContent = `${result.measurement.distanceM.toFixed(3)} m · d ${result.measurement.disparity.toFixed(1)} px`;
+            }
         }
 
         function readDraftSettings() {
@@ -556,6 +731,10 @@
                 const form = new FormData();
                 form.append('left', leftBlob, 'left.jpg');
                 form.append('right', rightBlob, 'right.jpg');
+                if (selectedMeasurement) {
+                    form.append('measureX', selectedMeasurement.x);
+                    form.append('measureY', selectedMeasurement.y);
+                }
                 const response = await fetch('/api/disparity', { method: 'POST', body: form });
                 if (!capturing) break;
                 if (!response.ok) {
@@ -565,7 +744,13 @@
                 const imageUrl = URL.createObjectURL(await response.blob());
                 depthImage.src = imageUrl;
                 depthImage.hidden = false;
+                measurementOverlay.hidden = false;
                 depthPlaceholder.hidden = true;
+                if (selectedMeasurement) {
+                    const measurement = response.headers.get('X-Measurement');
+                    if (measurement) setMeasurementReadout(JSON.parse(measurement));
+                    drawMeasurementMarker();
+                }
                 if (previousImageUrl) URL.revokeObjectURL(previousImageUrl);
                 previousImageUrl = imageUrl;
                 processingState.removeAttribute('data-i18n');
@@ -605,6 +790,7 @@
             refreshCameraList.disabled = true;
             toggleCapture.textContent = translate('disconnect');
             capturing = true;
+            document.getElementById('captureCalibration').disabled = false;
             togglePreview.disabled = false;
             setStatus('live', 'liveFeed');
             setNotice('liveProcessingActive');
@@ -726,6 +912,20 @@
                 }
             });
         });
+        measurementOverlay.addEventListener('click', event => {
+            if (!capturing || !depthImage.naturalWidth) return;
+            const bounds = measurementOverlay.getBoundingClientRect();
+            const scale = Math.min(bounds.width / depthImage.naturalWidth, bounds.height / depthImage.naturalHeight);
+            const offsetX = (bounds.width - depthImage.naturalWidth * scale) / 2;
+            const offsetY = (bounds.height - depthImage.naturalHeight * scale) / 2;
+            const x = Math.floor((event.clientX - bounds.left - offsetX) / scale);
+            const y = Math.floor((event.clientY - bounds.top - offsetY) / scale);
+            if (x < 0 || y < 0 || x >= depthImage.naturalWidth || y >= depthImage.naturalHeight) return;
+            selectedMeasurement = { x, y };
+            measurementReadout.textContent = translate('measurementCalculating');
+            drawMeasurementMarker();
+        });
+        measurementOverlay.addEventListener('dblclick', () => toggleFullscreen(measurementOverlay));
         integerSettings.forEach(name => document.getElementById(name).addEventListener('input', syncSettingOutputs));
         document.querySelectorAll('[data-language]').forEach(button => button.addEventListener('click', () => {
             language = button.dataset.language;
@@ -753,6 +953,64 @@
             togglePreview.disabled = !capturing;
             advancedSettings.showModal();
         });
+        document.getElementById('openCameraCalibration').addEventListener('click', () => {
+            document.getElementById('calibrationError').textContent = '';
+            updateCalibrationTarget();
+            cameraCalibration.showModal();
+            refreshCalibrationStatus().catch(error => {
+                document.getElementById('calibrationError').textContent = error.message;
+            });
+        });
+        ['closeCalibration', 'doneCalibration'].forEach(id => {
+            document.getElementById(id).addEventListener('click', () => cameraCalibration.close());
+        });
+        ['boardColumns', 'boardRows', 'squareSizeMm'].forEach(id => {
+            document.getElementById(id).addEventListener('input', updateCalibrationTarget);
+        });
+        mobileTargetUrl.addEventListener('change', updateCalibrationTarget);
+        document.getElementById('captureCalibration').addEventListener('click', async event => {
+            const button = event.currentTarget;
+            button.disabled = true;
+            document.getElementById('calibrationError').textContent = '';
+            try {
+                await captureCalibrationView();
+            } catch (error) {
+                document.getElementById('calibrationError').textContent = error.message;
+            } finally {
+                button.disabled = !capturing;
+            }
+        });
+        document.getElementById('resetCalibration').addEventListener('click', async () => {
+            const response = await fetch('/api/stereo-calibration', { method: 'DELETE' });
+            if (!response.ok) {
+                document.getElementById('calibrationError').textContent = 'Could not reset calibration.';
+                return;
+            }
+            updateCalibrationStatus(await response.json());
+            document.getElementById('calibrationError').textContent = '';
+            selectedMeasurement = null;
+            measurementReadout.textContent = translate('measurementPrompt');
+        });
+        document.getElementById('copyTargetUrl').addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(mobileTargetUrl.value);
+                setNotice('copiedTargetUrl');
+            } catch (error) {
+                mobileTargetUrl.select();
+                document.execCommand('copy');
+            }
+        });
+        document.getElementById('printTarget').addEventListener('click', () => {
+            window.open(calibrationTargetUrl().href, '_blank', 'noopener');
+        });
+        document.getElementById('fullscreenTarget').addEventListener('click', toggleTargetFullscreen);
+        checkerboardTarget.addEventListener('click', toggleTargetFullscreen);
+        checkerboardTarget.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleTargetFullscreen();
+            }
+        });
         document.getElementById('closeSettings').addEventListener('click', closeSettingsDialog);
         document.getElementById('cancelSettings').addEventListener('click', closeSettingsDialog);
         advancedSettings.addEventListener('cancel', event => {
@@ -776,6 +1034,10 @@
         });
         applyLanguage();
         syncSettingOutputs();
+        updateCalibrationTarget();
+        refreshCalibrationStatus().catch(error => {
+            document.getElementById('calibrationError').textContent = error.message;
+        });
         loadAppliedSettings().then(() => {
             openSettings.disabled = false;
         }).catch(error => {
