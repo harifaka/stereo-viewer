@@ -32,6 +32,10 @@ stereo_params = {
 params_lock = Lock()
 calibration_lock = Lock()
 calibration_state = {'captures': [], 'board': None, 'active': None, 'method': None}
+pose_settings_lock = Lock()
+pose_model_lock = Lock()
+pose_model = None
+pose_settings = {'enabled': False, 'view': 'composite', 'confidence': 0.35}
 CALIBRATION_VIEWS_REQUIRED = 8
 COLOR_MAPS = {
     'TURBO': cv2.COLORMAP_TURBO,
@@ -42,8 +46,6 @@ STEREO_MODES = {
     'SGBM': cv2.STEREO_SGBM_MODE_SGBM,
     '3WAY': cv2.STEREO_SGBM_MODE_SGBM_3WAY,
 }
-
-
 def decode_frame(upload):
     if upload is None:
         return None
@@ -113,9 +115,11 @@ def estimate_point(disparity_map, x, y, active, params):
     return {'x': x, 'y': y, 'disparity': round(disparity, 2), 'distanceM': round(distance_m, 3)}, None
 
 
-def process_disparity(frame_left, frame_right, params, return_map=False, measurement_point=None):
+def process_disparity(frame_left, frame_right, params, return_map=False, measurement_point=None, pose_options=None):
     if frame_left.shape[:2] != frame_right.shape[:2]:
         frame_right = cv2.resize(frame_right, (frame_left.shape[1], frame_left.shape[0]))
+    pose_frame_left = frame_left
+    pose_frame_right = frame_right
 
     if frame_left.shape[1] <= params['numDisparities'] + params['blockSize']:
         return jsonify({'error': 'The selected camera resolution is too narrow for these settings.'}), 400
@@ -125,8 +129,10 @@ def process_disparity(frame_left, frame_right, params, return_map=False, measure
         if active_calibration and active_calibration['image_size'] == (frame_left.shape[1], frame_left.shape[0]):
             map_left = active_calibration['map_left']
             map_right = active_calibration['map_right']
+            pose_calibration = active_calibration
         else:
             map_left = map_right = None
+            pose_calibration = None
     if map_left is not None:
         frame_left = cv2.remap(frame_left, map_left[0], map_left[1], cv2.INTER_LINEAR)
         frame_right = cv2.remap(frame_right, map_right[0], map_right[1], cv2.INTER_LINEAR)
@@ -156,6 +162,12 @@ def process_disparity(frame_left, frame_right, params, return_map=False, measure
             measurement, measurement_error = estimate_point(
                 disparity_map, *measurement_point, active_calibration, params
             )
+        pose_data = None
+        if pose_options and pose_options['enabled']:
+            pose_data = estimate_pose_data(
+                pose_frame_left, pose_frame_right, disparity_map, pose_calibration,
+                params, pose_options
+            )
         valid = disparity_map > params['minDisparity']
         disparity_gray = np.zeros(disparity_map.shape, dtype=np.uint8)
         disparity_gray[valid] = np.clip(
@@ -178,7 +190,141 @@ def process_disparity(frame_left, frame_right, params, return_map=False, measure
     headers = {'Cache-Control': 'no-store'}
     if measurement_point is not None:
         headers['X-Measurement'] = json.dumps({'measurement': measurement, 'error': measurement_error})
+    if pose_data is not None:
+        headers['X-Pose-Data'] = json.dumps(pose_data, separators=(',', ':'))
     return Response(buffer.tobytes(), mimetype='image/jpeg', headers=headers)
+
+
+def validate_pose_settings(data):
+    if not isinstance(data, dict):
+        raise ValueError('Pose settings must be a JSON object.')
+    enabled = data.get('enabled', pose_settings['enabled'])
+    if not isinstance(enabled, bool):
+        raise ValueError('enabled must be a boolean.')
+    view = data.get('view', pose_settings['view'])
+    if view not in ('left', 'right', 'composite', 'both'):
+        raise ValueError('view must be left, right, composite, or both.')
+    confidence = data.get('confidence', pose_settings['confidence'])
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        raise ValueError('confidence must be a number.')
+    confidence = float(confidence)
+    if not math.isfinite(confidence) or not 0.1 <= confidence <= 0.9:
+        raise ValueError('confidence must be between 0.1 and 0.9.')
+    return {'enabled': enabled, 'view': view, 'confidence': confidence}
+
+
+def run_pose_model(frame, confidence, tracking):
+    global pose_model
+    with pose_model_lock:
+        if pose_model is None:
+            from ultralytics import YOLO
+            pose_model = YOLO('yolov8n-pose.pt')
+        if tracking:
+            return pose_model.track(
+                frame, persist=True, conf=confidence, verbose=False
+            )[0]
+        return pose_model.predict(frame, conf=confidence, verbose=False)[0]
+
+
+def pose_disparity_pixel(x, y, active_calibration, right_view):
+    if not active_calibration:
+        return float(x), float(y)
+    camera = 'right' if right_view else 'left'
+    if active_calibration.get('metric') and f'camera_{camera}' in active_calibration:
+        point = np.array([[[x, y]]], dtype=np.float32)
+        rectified = cv2.undistortPoints(
+            point,
+            active_calibration[f'camera_{camera}'],
+            active_calibration[f'distortion_{camera}'],
+            R=active_calibration[f'rect_{camera}'],
+            P=active_calibration[f'projection_{camera}'],
+        )
+        return float(rectified[0, 0, 0]), float(rectified[0, 0, 1])
+    transform = active_calibration.get(f'point_transform_{camera}')
+    if transform is not None:
+        point = cv2.perspectiveTransform(
+            np.array([[[x, y]]], dtype=np.float32), transform
+        )
+        return float(point[0, 0, 0]), float(point[0, 0, 1])
+    return float(x), float(y)
+
+
+def pose_people(frame, tracking, confidence, disparity_map=None, active_calibration=None, params=None, right_view=False):
+    result = run_pose_model(frame, confidence, tracking)
+    if result.keypoints is None or result.keypoints.xy is None:
+        return []
+    coordinates = result.keypoints.xy.cpu().numpy()
+    confidences = result.keypoints.conf
+    confidences = confidences.cpu().numpy() if confidences is not None else None
+    track_ids = result.boxes.id
+    track_ids = track_ids.cpu().tolist() if track_ids is not None else [None] * len(coordinates)
+    people = []
+    for person_index, joints in enumerate(coordinates[:6]):
+        points = []
+        for joint_index, (x_value, y_value) in enumerate(joints):
+            disparity_x, disparity_y = pose_disparity_pixel(
+                x_value, y_value, active_calibration, right_view
+            )
+            point = {
+                'index': joint_index,
+                'x': round(float(x_value), 1),
+                'y': round(float(y_value), 1),
+                'disparityX': round(disparity_x, 1),
+                'disparityY': round(disparity_y, 1),
+                'confidence': round(float(confidences[person_index][joint_index]), 2)
+                if confidences is not None else 1,
+                'xyzM': None,
+                'distanceM': None,
+            }
+            if disparity_map is not None and active_calibration and active_calibration.get('metric'):
+                x, y = int(round(disparity_x)), int(round(disparity_y))
+                if right_view:
+                    x = min(disparity_map.shape[1] - 1, x + params['numDisparities'] // 2)
+                if 0 <= x < disparity_map.shape[1] and 0 <= y < disparity_map.shape[0]:
+                    region = disparity_map[max(0, y - 2):y + 3, max(0, x - 2):x + 3]
+                    valid = region[np.isfinite(region) & (region > params['minDisparity'])]
+                    if valid.size >= 3:
+                        disparity = float(np.median(valid))
+                        if right_view:
+                            x = min(disparity_map.shape[1] - 1, int(round(disparity_x + disparity)))
+                        homogeneous = active_calibration['q'] @ np.array([x, y, disparity, 1.0])
+                        if abs(homogeneous[3]) >= 1e-9:
+                            xyz_m = homogeneous[:3] / homogeneous[3] / 1000
+                            distance_m = float(np.linalg.norm(xyz_m))
+                            if np.isfinite(xyz_m).all() and math.isfinite(distance_m) and distance_m > 0:
+                                point['xyzM'] = [round(float(value), 3) for value in xyz_m]
+                                point['distanceM'] = round(distance_m, 3)
+            points.append(point)
+        people.append({'trackId': track_ids[person_index], 'points': points})
+    return people
+
+
+def estimate_pose_data(frame_left, frame_right, disparity_map, active_calibration, params, options):
+    metric_available = bool(
+        active_calibration and active_calibration.get('metric') and active_calibration.get('q') is not None
+    )
+    result = {
+        'view': options['view'],
+        'metricAvailable': metric_available,
+        'left': [],
+        'right': [],
+        'error': None,
+    }
+    try:
+        if options['view'] in ('left', 'composite', 'both'):
+            result['left'] = pose_people(
+                frame_left, True, options['confidence'], disparity_map,
+                active_calibration, params
+            )
+        if options['view'] in ('right', 'both'):
+            result['right'] = pose_people(
+                frame_right, False, options['confidence'], disparity_map,
+                active_calibration, params, right_view=True
+            )
+    except Exception as error:
+        app.logger.exception('pose estimation failed')
+        result['error'] = str(error)[:240]
+    return result
 
 
 def calibration_status():
@@ -270,6 +416,8 @@ def build_feature_rectification(frame_left, frame_right):
         'image_size': (width, height),
         'map_left': maps[0],
         'map_right': maps[1],
+        'point_transform_left': homography_left,
+        'point_transform_right': homography_right,
         'q': None,
         'metric': False,
         'matched_features': len(matches),
@@ -324,6 +472,14 @@ def build_stereo_calibration(captures, board, image_size):
         'image_size': image_size,
         'map_left': map_left,
         'map_right': map_right,
+        'camera_left': camera_left,
+        'distortion_left': distortion_left,
+        'rect_left': rect_left,
+        'projection_left': projection_left,
+        'camera_right': camera_right,
+        'distortion_right': distortion_right,
+        'rect_right': rect_right,
+        'projection_right': projection_right,
         'q': reprojection,
         'baseline_mm': float(np.linalg.norm(translation)),
         'focal_length_px': float(projection_left[0, 0]),
@@ -600,6 +756,23 @@ def client_log():
 def index():
     return render_template('index.html')
 
+
+@app.route('/api/pose-settings', methods=['GET', 'POST'])
+def pose_settings_endpoint():
+    global pose_settings
+    if request.method == 'GET':
+        with pose_settings_lock:
+            return jsonify(pose_settings.copy())
+    data = request.get_json(silent=True)
+    try:
+        updated = validate_pose_settings(data)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    with pose_settings_lock:
+        pose_settings = updated
+    return jsonify(pose_settings.copy())
+
+
 @app.route('/api/disparity', methods=['POST'])
 @app.route('/api/preview', methods=['POST'])
 def disparity():
@@ -637,6 +810,8 @@ def disparity():
             return jsonify({'error': message}), 400
     else:
         params = current_params
+    with pose_settings_lock:
+        current_pose_settings = pose_settings.copy()
 
     measurement_point = None
     if not is_preview and ('measureX' in request.form or 'measureY' in request.form):
@@ -644,7 +819,11 @@ def disparity():
             measurement_point = (int(request.form['measureX']), int(request.form['measureY']))
         except (KeyError, TypeError, ValueError):
             return jsonify({'error': 'Measurement coordinates must be integers.'}), 400
-    result = process_disparity(frame_left, frame_right, params, measurement_point=measurement_point)
+    result = process_disparity(
+        frame_left, frame_right, params,
+        measurement_point=measurement_point,
+        pose_options=None if is_preview else current_pose_settings,
+    )
     if isinstance(result, tuple):
         return result
 

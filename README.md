@@ -46,6 +46,12 @@ Start camera capture and open calibration to see both live camera views and the 
 
 After calibration, click a point on the live **Disparity map**. A marker appears and the metric distance and local disparity refresh with each processed frame. The estimate uses a small neighborhood around the selected pixel; textureless, occluded, reflective, or otherwise unmatched areas may have no reliable result. A valid metric estimate depends on a rigid, synchronized stereo pair, the correct checkerboard cell size, and varied calibration views. It is an estimate, not a substitute for a depth sensor or a verified measurement instrument.
 
+### Pose Estimation and Spatial Tracking
+
+Open **Detailed settings** > **Pose tracking** to enable YOLOv8 Nano Pose, choose a confidence threshold, and display the skeleton on the left camera, right camera, disparity composite, or all three views. The model downloads automatically the first time pose estimation is enabled; the container needs internet access for that first download. Pose inference runs on the CPU by default and reduces the available frame rate, especially when displaying both camera feeds. The model is loaded only when pose estimation is first used.
+
+Pose landmarks provide 2D tracking without calibration. Metric 3D joint coordinates and distance labels require checkerboard stereo calibration at the current camera resolution; feature alignment alone does not provide real-world scale. Each landmark uses a small local disparity neighborhood, so joints on occluded, textureless, or mismatched regions may not have a 3D estimate. Right-camera landmarks are transformed into rectified stereo coordinates before depth lookup. This tracking output is a visual estimate and should not be used as a safety-rated measurement or control input.
+
 StereoSGBM calculates relative disparity. Stereo rectification corrects lens distortion and camera alignment using the calibration, while the known checkerboard scale and measured baseline allow the app to estimate metric distance. Matcher tuning alone cannot correct a moving rig, unsynchronized cameras, poor calibration views, or an incorrectly measured target.
 
 If no cameras appear, grant the site camera permission and reload the page.

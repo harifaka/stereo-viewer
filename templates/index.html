@@ -63,6 +63,8 @@
         .panel-head span { color: var(--muted); font-size: 11px; }
         .view { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background-color: #111412; background-image: linear-gradient(135deg, #ffffff05 25%, transparent 25%, transparent 50%, #ffffff05 50%, #ffffff05 75%, transparent 75%, transparent); background-size: 16px 16px; }
         video, .depth-image { display: block; width: 100%; height: 100%; object-fit: contain; }
+        .pose-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+        .pose-overlay[hidden] { display: none; }
         .placeholder { position: absolute; inset: 0; display: grid; place-content: center; gap: 8px; color: #869188; text-align: center; }
         video[hidden], .depth-image[hidden], .placeholder[hidden] { display: none; }
         video, .depth-image { cursor: zoom-in; }
@@ -97,6 +99,13 @@
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 15px; border-top: 1px solid var(--line); }
         .settings-error { min-height: 18px; margin: 0; color: var(--danger); font-size: 12px; }
         #hardwareSettings { z-index: 2; width: min(820px, calc(100vw - 28px)); max-height: min(86vh, 760px); }
+        #poseSettingsDialog { width: min(620px, calc(100vw - 28px)); }
+        .pose-settings-content { display: grid; gap: 18px; padding: 20px 0; }
+        .pose-setting { display: grid; gap: 9px; color: var(--muted); font-size: 12px; }
+        .pose-setting input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+        .pose-setting input[type="range"] { width: 100%; accent-color: var(--accent); }
+        .pose-setting select { width: 100%; max-width: none; }
+        .pose-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
         .hardware-content { display: grid; gap: 18px; padding: 20px 0; }
         .hardware-toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
         .hardware-toolbar label, .hardware-readout { display: grid; min-width: 0; gap: 7px; color: var(--muted); font-size: 11px; }
@@ -165,6 +174,9 @@
             .sources { grid-template-columns: 1fr; }
             .sources .view { aspect-ratio: 16 / 10; }
             .settings-form { padding: 16px; }
+            .settings-heading { align-items: stretch; flex-direction: column; }
+            .settings-heading > .actions { width: 100%; flex-wrap: wrap; justify-content: stretch; }
+            .settings-heading > .actions .action-button { flex: 1 1 calc(50% - 8px); min-width: 120px; }
             .settings-grid { grid-template-columns: 1fr; gap: 16px; }
             .settings-layout { grid-template-columns: 1fr; gap: 18px; }
             .settings-grid { padding: 0; }
@@ -207,16 +219,16 @@
                 <div class="sources">
                     <article class="panel">
                         <div class="panel-head"><strong data-i18n="leftCameraLabel">Left camera</strong><span>INPUT 01</span></div>
-                        <div class="view"><video id="leftVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open left camera full screen" data-i18n-aria="openLeftFullscreen" title="Open full screen" data-i18n-title="openFullscreen"></video><div class="placeholder" id="leftPlaceholder"><b data-i18n="awaitingCamera">Awaiting camera</b><span data-i18n="connectBeginCapture">Connect to begin capture</span></div><span class="camera-label" data-i18n="left">Left</span></div>
+                        <div class="view"><video id="leftVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open left camera full screen" data-i18n-aria="openLeftFullscreen" title="Open full screen" data-i18n-title="openFullscreen"></video><canvas class="pose-overlay" id="leftPoseOverlay" hidden aria-hidden="true"></canvas><div class="placeholder" id="leftPlaceholder"><b data-i18n="awaitingCamera">Awaiting camera</b><span data-i18n="connectBeginCapture">Connect to begin capture</span></div><span class="camera-label" data-i18n="left">Left</span></div>
                     </article>
                     <article class="panel">
                         <div class="panel-head"><strong data-i18n="rightCameraLabel">Right camera</strong><span>INPUT 02</span></div>
-                        <div class="view"><video id="rightVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open right camera full screen" data-i18n-aria="openRightFullscreen" title="Open full screen" data-i18n-title="openFullscreen"></video><div class="placeholder" id="rightPlaceholder"><b data-i18n="awaitingCamera">Awaiting camera</b><span data-i18n="connectBeginCapture">Connect to begin capture</span></div><span class="camera-label" data-i18n="right">Right</span></div>
+                        <div class="view"><video id="rightVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open right camera full screen" data-i18n-aria="openRightFullscreen" title="Open full screen" data-i18n-title="openFullscreen"></video><canvas class="pose-overlay" id="rightPoseOverlay" hidden aria-hidden="true"></canvas><div class="placeholder" id="rightPlaceholder"><b data-i18n="awaitingCamera">Awaiting camera</b><span data-i18n="connectBeginCapture">Connect to begin capture</span></div><span class="camera-label" data-i18n="right">Right</span></div>
                     </article>
                 </div>
                 <article class="panel depth-panel">
                     <div class="panel-head"><strong data-i18n="disparityMap">Disparity map</strong><span>STEREO SGBM</span></div>
-                    <div class="view"><img class="depth-image" id="depthImage" alt="Live color-coded stereo disparity map" data-i18n-alt="disparityAlt" hidden tabindex="0" role="button" title="Open full screen" data-i18n-title="openFullscreen"><canvas class="measurement-overlay" id="measurementOverlay" hidden aria-label="Select a point to measure distance" data-i18n-aria="measurementOverlayLabel"></canvas><div class="placeholder depth-placeholder" id="depthPlaceholder"><b data-i18n="depthIdle">Depth view is idle</b><span data-i18n="connectBothCalculate">Connect both cameras to calculate</span></div></div>
+                    <div class="view"><img class="depth-image" id="depthImage" alt="Live color-coded stereo disparity map" data-i18n-alt="disparityAlt" hidden tabindex="0" role="button" title="Open full screen" data-i18n-title="openFullscreen"><canvas class="measurement-overlay" id="measurementOverlay" hidden aria-label="Select a point to measure distance" data-i18n-aria="measurementOverlayLabel"></canvas><canvas class="pose-overlay" id="compositePoseOverlay" hidden aria-hidden="true"></canvas><div class="placeholder depth-placeholder" id="depthPlaceholder"><b data-i18n="depthIdle">Depth view is idle</b><span data-i18n="connectBothCalculate">Connect both cameras to calculate</span></div></div>
                     <div class="readout"><span data-i18n="measurement">Point distance</span><strong id="measurementReadout" data-i18n="measurementPrompt">Click the map to measure</strong><span data-i18n="processing">Processing</span><strong id="processingState" data-i18n="ready">Ready</strong></div>
                 </article>
             </section>
@@ -227,7 +239,7 @@
         <form class="settings-form" id="settingsForm">
             <div class="settings-heading">
                 <div class="settings-heading-copy"><div class="section-kicker" data-i18n="stereoMatching">Stereo matching</div><h3 id="settingsTitle" data-i18n="detailedSettings">Detailed settings</h3><p class="settings-intro" data-i18n="settingsIntro">Tune how matching finds corresponding image details. Use the preview to compare changes; Apply saves them, while Cancel discards the draft.</p></div>
-                <div class="actions"><button class="action-button" id="openHardwareSettings" type="button" data-i18n="cameraHardware">Camera hardware</button><button class="action-button" id="openCameraCalibration" type="button" data-i18n="cameraCalibration">Camera calibration</button><button class="action-button" id="closeSettings" type="button" data-i18n="close">Close</button></div>
+                <div class="actions"><button class="action-button" id="openPoseSettings" type="button" data-i18n="poseTracking">Pose tracking</button><button class="action-button" id="openHardwareSettings" type="button" data-i18n="cameraHardware">Camera hardware</button><button class="action-button" id="openCameraCalibration" type="button" data-i18n="cameraCalibration">Camera calibration</button><button class="action-button" id="closeSettings" type="button" data-i18n="close">Close</button></div>
             </div>
             <div class="settings-layout">
                 <div class="settings-grid">
@@ -272,6 +284,22 @@
                 <div class="modal-actions"><button class="action-button" id="resetHardwareSettings" type="button" data-i18n="resetDeviceControls">Reset device controls</button><button class="action-button primary" id="doneHardwareSettings" type="button" data-i18n="done">Done</button></div>
             </form>
         </dialog>
+    </dialog>
+    <dialog id="poseSettingsDialog" aria-labelledby="poseSettingsTitle">
+        <form class="settings-form" id="poseSettingsForm">
+            <div class="settings-heading">
+                <div class="settings-heading-copy"><div class="section-kicker" data-i18n="spatialTracking">Spatial tracking</div><h3 id="poseSettingsTitle" data-i18n="poseTracking">Pose tracking</h3><p class="settings-intro" data-i18n="poseIntro">Detect body landmarks and use stereo disparity to estimate their 3D position.</p></div>
+                <button class="action-button" id="closePoseSettings" type="button" data-i18n="close">Close</button>
+            </div>
+            <div class="pose-settings-content">
+                <label class="pose-setting"><span class="setting-label"><span data-i18n="enablePose">Enable pose estimation</span><input id="poseEnabled" type="checkbox"></span></label>
+                <label class="pose-setting" for="poseView"><span data-i18n="poseDisplayMode">Display on</span><select id="poseView"><option value="left" data-i18n="leftCameraLabel">Left camera</option><option value="right" data-i18n="rightCameraLabel">Right camera</option><option value="composite" data-i18n="disparityMap">Disparity map</option><option value="both" data-i18n="bothViews">Both cameras and disparity map</option></select></label>
+                <label class="pose-setting" for="poseConfidence"><span class="setting-label"><span data-i18n="poseConfidence">Detection confidence</span><output id="poseConfidenceValue">0.35</output></span><input id="poseConfidence" type="range" min="0.1" max="0.9" step="0.05" value="0.35"></label>
+                <p class="pose-note" data-i18n="poseFirstRunNote">The YOLO pose model downloads on first use. Checkerboard calibration is required for metric 3D coordinates; feature alignment provides 2D tracking only.</p>
+                <p class="hardware-status" id="poseSettingsError" role="alert"></p>
+            </div>
+            <div class="modal-actions"><button class="action-button" id="cancelPoseSettings" type="button" data-i18n="cancel">Cancel</button><button class="action-button primary" id="applyPoseSettings" type="submit" data-i18n="applySettings">Apply settings</button></div>
+        </form>
     </dialog>
     <dialog id="cameraCalibration" aria-labelledby="calibrationTitle">
         <form class="settings-form" id="calibrationForm">
@@ -336,6 +364,10 @@
         const calibrationRightView = document.getElementById('calibrationRightView');
         const calibrationComposite = document.getElementById('calibrationComposite');
         const calibrationMethod = document.getElementById('calibrationMethod');
+        const leftPoseOverlay = document.getElementById('leftPoseOverlay');
+        const rightPoseOverlay = document.getElementById('rightPoseOverlay');
+        const compositePoseOverlay = document.getElementById('compositePoseOverlay');
+        const poseSettingsDialog = document.getElementById('poseSettingsDialog');
         const translations = {
             liveDepthWorkstation: ['Live depth workstation', 'Valós idejű mélységmérés'], camerasDisconnected: ['Cameras disconnected', 'A kamerák nincsenek csatlakoztatva'],
             captureDisparity: ['Capture / disparity', 'Felvétel / parallaxis'], stereoMonitor: ['Stereo monitor', 'Sztereó monitor'], refreshCameras: ['Refresh cameras', 'Kamerák frissítése'], detailedSettings: ['Detailed settings', 'Részletes beállítások'],
@@ -378,6 +410,7 @@
             secureContext: ['Camera capture requires a secure browser context. Open this app at localhost or over HTTPS.', 'A kamerahasználathoz biztonságos böngészőkörnyezet szükséges. Nyisd meg az alkalmazást localhoston vagy HTTPS-en.'], openFullscreenError: ['Could not open full screen: {message}', 'Nem sikerült megnyitni a teljes képernyőt: {message}'],
             cameraUnavailable: ['Camera unavailable', 'A kamera nem érhető el'], cameraAccessUnavailable: ['Camera access unavailable', 'A kamera-hozzáférés nem érhető el'], cameraOrProcessingError: ['Camera or processing error', 'Kamera- vagy feldolgozási hiba'], processingFailed: ['Depth processing failed.', 'A mélységfeldolgozás nem sikerült.'],
             loadSettingsError: ['Could not load the active stereo settings.', 'Nem sikerült betölteni az aktív sztereó beállításokat.'], updateSettingsError: ['Could not update the stereo settings.', 'Nem sikerült frissíteni a sztereó beállításokat.'], previewError: ['Preview failed: {message}', 'Az előnézet nem sikerült: {message}'],
+            poseTracking: ['Pose tracking', 'Testtartáskövetés'], spatialTracking: ['Spatial tracking', 'Térbeli követés'], poseIntro: ['Detect body landmarks and use stereo disparity to estimate their 3D position.', 'Testpontok felismerése és sztereó parallaxis alapján a 3D pozíció becslése.'], enablePose: ['Enable pose estimation', 'Testtartásbecslés engedélyezése'], poseDisplayMode: ['Display on', 'Megjelenítés'], bothViews: ['Both cameras and disparity map', 'Mindkét kamera és parallaxis-térkép'], poseConfidence: ['Detection confidence', 'Felismerési küszöb'], poseFirstRunNote: ['The YOLO pose model downloads on first use. Checkerboard calibration is required for metric 3D coordinates; feature alignment provides 2D tracking only.', 'A YOLO pózmodell első használatkor töltődik le. Valós mértékegységű 3D koordinátákhoz sakktáblás kalibrálás kell; a jellegpont-illesztés csak 2D követést ad.'], poseError: ['Pose model unavailable: {message}', 'A pózmodell nem érhető el: {message}'], poseSettingsApplied: ['Pose tracking settings applied.', 'A testtartáskövetés beállításai alkalmazva.'],
             cameraHardware: ['Camera hardware', 'Kamera hardver'], deviceControls: ['Device controls', 'Eszközvezérlők'], hardwareIntro: ['Controls are discovered from the selected camera. Changes apply to that camera immediately.', 'A vezérlőket a kiválasztott kamera képességei alapján jelenítjük meg. A módosítások azonnal érvénybe lépnek.'], cameraSide: ['Camera input', 'Kamerabemenet'], hardwareDevice: ['Camera device', 'Kameraeszköz'], browserDeviceId: ['Browser device ID', 'Böngészőbeli eszközazonosító'], resetDeviceControls: ['Reset device controls', 'Eszközvezérlők visszaállítása'],
             hardwareConnectFirst: ['Connect both cameras to inspect and adjust their hardware controls.', 'Csatlakoztasd mindkét kamerát a hardvervezérlők megtekintéséhez és módosításához.'], hardwareUnsupported: ['This camera does not expose adjustable controls to the browser.', 'Ez a kamera nem tesz elérhetővé módosítható vezérlőket a böngésző számára.'], hardwareControlApplied: ['Camera setting applied.', 'Kamerabeállítás alkalmazva.'], hardwareControlError: ['Could not apply this camera setting: {message}', 'Nem sikerült alkalmazni a kamerabeállítást: {message}'], hardwareResetDone: ['Camera controls reset to browser defaults.', 'A kamera vezérlői visszaálltak a böngésző alapértékeire.'], hardwareResetError: ['Could not reset camera controls: {message}', 'Nem sikerült visszaállítani a kamera vezérlőit: {message}'], hardwareNoDevices: ['No camera devices are available.', 'Nem érhetők el kameraeszközök.'], hardwareSameDevice: ['Choose a different camera for each stereo input.', 'A két sztereó bemenethez külön kamerát válassz.'], hardwareSwitched: ['Camera device changed.', 'A kameraeszköz megváltozott.'], hardwareSwitchError: ['Could not switch camera: {message}', 'Nem sikerült kamerát váltani: {message}'], hardwareSwitchWhileOff: ['Device selection is available now. Connect the cameras to inspect hardware controls.', 'Az eszköz most kiválasztható. Csatlakoztasd a kamerákat a hardvervezérlők megtekintéséhez.'], hardwareNoValues: ['No current value', 'Nincs aktuális érték'], hardwareLoading: ['Loading camera capabilities…', 'Kamera képességeinek betöltése…'], hardwareModeAuto: ['Automatic', 'Automatikus'], hardwareModeManual: ['Manual', 'Kézi'], hardwareResetConfirm: ['Reset all adjustable controls on this camera to browser defaults?', 'Visszaállítod a kamera összes módosítható vezérlőjét a böngésző alapértékeire?'],
             invalidCameraFrames: ['Upload a valid image from each camera.', 'Tölts fel érvényes képet mindkét kameráról.'], narrowResolution: ['The selected camera resolution is too narrow for these settings.', 'A kiválasztott kamera felbontása túl alacsony ezekhez a beállításokhoz.'], disparityEncodeError: ['Could not encode the disparity image.', 'Nem sikerült kódolni a parallaxis-képet.'], stereoProcessError: ['Stereo image processing failed; see container logs.', 'A sztereó képfeldolgozás nem sikerült; részletek a konténer naplójában.']
@@ -411,6 +444,8 @@
             mode: '3WAY',
             colorMap: 'TURBO'
         };
+        let appliedPoseSettings = { enabled: false, view: 'composite', confidence: 0.35 };
+        let lastPoseError = '';
 
         function translate(key, variables = {}) {
             const entry = translations[key] || Object.values(translations).find(([english]) => english === key);
@@ -767,6 +802,7 @@
             document.getElementById('rightPlaceholder').hidden = false;
             depthImage.hidden = true;
             measurementOverlay.hidden = true;
+            renderPoseOverlays(null);
             selectedMeasurement = null;
             measurementReadout.textContent = translate('measurementPrompt');
             depthPlaceholder.hidden = false;
@@ -1007,6 +1043,102 @@
             context.stroke();
         }
 
+        function drawPoseOverlay(canvas, people, imageWidth, imageHeight, rectified = false) {
+            if (!people?.length || !imageWidth || !imageHeight) {
+                canvas.hidden = true;
+                return;
+            }
+            const bounds = canvas.getBoundingClientRect();
+            const ratio = window.devicePixelRatio || 1;
+            canvas.width = Math.round(bounds.width * ratio);
+            canvas.height = Math.round(bounds.height * ratio);
+            canvas.hidden = false;
+            const context = canvas.getContext('2d');
+            context.scale(ratio, ratio);
+            const scale = Math.min(bounds.width / imageWidth, bounds.height / imageHeight);
+            const offsetX = (bounds.width - imageWidth * scale) / 2;
+            const offsetY = (bounds.height - imageHeight * scale) / 2;
+            const position = point => ({
+                x: offsetX + (rectified ? point.disparityX : point.x) * scale,
+                y: offsetY + (rectified ? point.disparityY : point.y) * scale
+            });
+            const skeleton = [[5, 7], [7, 9], [6, 8], [8, 10], [5, 6], [5, 11], [6, 12], [11, 12], [11, 13], [13, 15], [12, 14], [14, 16]];
+            people.forEach(person => {
+                const points = person.points;
+                context.strokeStyle = '#c7f36b';
+                context.lineWidth = 2.5;
+                context.beginPath();
+                skeleton.forEach(([from, to]) => {
+                    const first = points[from];
+                    const second = points[to];
+                    if (first?.confidence < 0.2 || second?.confidence < 0.2) return;
+                    if (!first || !second) return;
+                    const start = position(first);
+                    const end = position(second);
+                    context.moveTo(start.x, start.y);
+                    context.lineTo(end.x, end.y);
+                });
+                context.stroke();
+                points.forEach((point, index) => {
+                    if (point.confidence < 0.2) return;
+                    const location = position(point);
+                    context.fillStyle = '#f3f5ef';
+                    context.beginPath();
+                    context.arc(location.x, location.y, 3.2, 0, Math.PI * 2);
+                    context.fill();
+                    if (point.distanceM !== null && [0, 5, 6, 11, 12, 15, 16].includes(index)) {
+                        context.font = '11px Bahnschrift, Segoe UI, sans-serif';
+                        context.fillStyle = '#c7f36b';
+                        context.fillText(`${point.distanceM.toFixed(2)} m`, location.x + 5, location.y - 5);
+                    }
+                });
+            });
+        }
+
+        function renderPoseOverlays(poseData) {
+            const overlays = [leftPoseOverlay, rightPoseOverlay, compositePoseOverlay];
+            overlays.forEach(canvas => {
+                canvas.hidden = true;
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            });
+            if (!appliedPoseSettings.enabled || !poseData) return;
+            if (poseData.error) {
+                if (poseData.error !== lastPoseError) setNotice('poseError', { message: poseData.error });
+                lastPoseError = poseData.error;
+                return;
+            }
+            lastPoseError = '';
+            const width = leftVideo.videoWidth;
+            const height = leftVideo.videoHeight;
+            if (poseData.view === 'left' || poseData.view === 'both') {
+                drawPoseOverlay(leftPoseOverlay, poseData.left, width, height);
+            }
+            if (poseData.view === 'right' || poseData.view === 'both') {
+                drawPoseOverlay(rightPoseOverlay, poseData.right, rightVideo.videoWidth, rightVideo.videoHeight);
+            }
+            if (poseData.view === 'composite' || poseData.view === 'both') {
+                drawPoseOverlay(compositePoseOverlay, poseData.left, width, height, true);
+            }
+        }
+
+        async function loadPoseSettings() {
+            const response = await fetch('/api/pose-settings');
+            if (!response.ok) throw new Error('Could not load pose settings.');
+            appliedPoseSettings = await response.json();
+            document.getElementById('poseEnabled').checked = appliedPoseSettings.enabled;
+            document.getElementById('poseView').value = appliedPoseSettings.view;
+            document.getElementById('poseConfidence').value = appliedPoseSettings.confidence;
+            document.getElementById('poseConfidenceValue').value = appliedPoseSettings.confidence.toFixed(2);
+        }
+
+        function readPoseSettings() {
+            return {
+                enabled: document.getElementById('poseEnabled').checked,
+                view: document.getElementById('poseView').value,
+                confidence: Number(document.getElementById('poseConfidence').value)
+            };
+        }
+
         async function toggleTargetFullscreen() {
             try {
                 if (document.fullscreenElement === checkerboardTarget) await document.exitFullscreen();
@@ -1113,6 +1245,8 @@
                     throw new Error(result.error || translate('processingFailed'));
                 }
                 const imageUrl = URL.createObjectURL(await response.blob());
+                const poseHeader = response.headers.get('X-Pose-Data');
+                renderPoseOverlays(poseHeader ? JSON.parse(poseHeader) : null);
                 depthImage.src = imageUrl;
                 depthImage.hidden = false;
                 measurementOverlay.hidden = false;
@@ -1429,6 +1563,44 @@
             }
         });
         document.getElementById('closeSettings').addEventListener('click', closeSettingsDialog);
+        document.getElementById('openPoseSettings').addEventListener('click', async () => {
+            document.getElementById('poseSettingsError').textContent = '';
+            try {
+                await loadPoseSettings();
+                poseSettingsDialog.showModal();
+            } catch (error) {
+                document.getElementById('poseSettingsError').textContent = error.message;
+                poseSettingsDialog.showModal();
+            }
+        });
+        document.getElementById('closePoseSettings').addEventListener('click', () => poseSettingsDialog.close());
+        document.getElementById('cancelPoseSettings').addEventListener('click', () => poseSettingsDialog.close());
+        document.getElementById('poseConfidence').addEventListener('input', event => {
+            document.getElementById('poseConfidenceValue').value = Number(event.target.value).toFixed(2);
+        });
+        document.getElementById('poseSettingsForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            const button = document.getElementById('applyPoseSettings');
+            button.disabled = true;
+            document.getElementById('poseSettingsError').textContent = '';
+            try {
+                const response = await fetch('/api/pose-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(readPoseSettings())
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Could not update pose settings.');
+                appliedPoseSettings = result;
+                poseSettingsDialog.close();
+                renderPoseOverlays(null);
+                setNotice('poseSettingsApplied');
+            } catch (error) {
+                document.getElementById('poseSettingsError').textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        });
         document.getElementById('cancelSettings').addEventListener('click', closeSettingsDialog);
         advancedSettings.addEventListener('cancel', event => {
             event.preventDefault();
@@ -1451,6 +1623,9 @@
         });
         applyLanguage();
         syncSettingOutputs();
+        loadPoseSettings().catch(error => {
+            document.getElementById('poseSettingsError').textContent = error.message;
+        });
         updateCalibrationTarget();
         refreshCalibrationStatus().catch(error => {
             document.getElementById('calibrationError').textContent = error.message;

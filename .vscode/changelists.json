@@ -4,9 +4,11 @@
       "name": "Default",
       "files": [
         ".vscode/changelists.json",
+        "ROADMAP.md",
         "app.py",
         "templates/index.html",
-        "README.md"
+        "README.md",
+        "requirements.txt"
       ]
     }
   ],

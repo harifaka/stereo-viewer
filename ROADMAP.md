@@ -22,7 +22,7 @@ This document outlines the development roadmap for a Dockerized stereoscopic vis
   - [x] Make camera and disparity views responsive and openable in full screen.
 
 ## Phase 2: Enhanced Depth, UX, & AI Integration (V3)
-**Goal:** Upgrade the depth map with interactive features, AI object detection, and better calibration techniques.
+**Goal:** Upgrade the depth map with interactive features, AI object detection, better calibration techniques, and hardware acceleration for advanced spatial tracking.
 
 - [x] **Automatic Checkerboard Calibration**
   - Add a settings modal with a printable, downloadable PDF and phone-displayable checkerboard.
@@ -46,6 +46,14 @@ This document outlines the development roadmap for a Dockerized stereoscopic vis
 - [ ] **Anaglyph (Red-Cyan) 3D View**
   - Merge the Left Camera's Red channel with the Right Camera's Green and Blue channels.
   - Stream the resulting composite for viewing with standard 3D glasses.
+- [x] **3D Pose Estimation & Spatial Tracking**
+  - Integrate YOLOv8 Nano Pose to extract tracked body landmarks from the live camera feeds.
+  - Cross-reference rectified joint coordinates with the disparity map and checkerboard Q matrix for metric 3D positions.
+  - Add pose settings for left, right, disparity composite, or all views, plus enable and confidence controls.
+- [ ] **GPU-Optimized CUDA Pipeline (Hardware Acceleration)**
+  - Configure `docker-compose.yml` with NVIDIA Container Toolkit for GPU passthrough to the container.
+  - Utilize a custom OpenCV build with `cv2.cuda` to keep frame data in VRAM (`cv2.cuda_GpuMat`), minimizing CPU-GPU transfer bottlenecks.
+  - Run `cv2.cuda.StereoSGM` and a PyTorch/TensorRT-optimized YOLOv8 sequentially on the GPU for a high-FPS, low-CPU real-time pipeline.
 
 ## Phase 3: Multi-Sensor, Thermal, & Spatial Mapping (V4)
 **Goal:** Move beyond basic stereo vision into industrial-grade multi-sensor fusion, supporting asymmetrical camera setups, thermal imaging, and moving environments.
