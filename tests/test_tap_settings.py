@@ -71,6 +71,9 @@ class TapSettingsApiTests(unittest.TestCase):
         self.assertIn(b'TAP-Net temporal tracking', response.data)
         self.assertIn(b'href="/" data-copy="stereoPage"', response.data)
         self.assertIn(b'href="/multi-camera" aria-current="page"', response.data)
+        self.assertIn(b'data-camera-settings-open', response.data)
+        self.assertIn(b'cameraSettingsDialog', response.data)
+        self.assertIn(b'/api/cameras/start', response.data)
 
     def test_renders_page_navigation_on_the_stereo_homepage(self):
         response = self.client.get('/')
@@ -78,6 +81,8 @@ class TapSettingsApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'href="/" aria-current="page"', response.data)
         self.assertIn(b'href="/multi-camera"', response.data)
+        self.assertIn(b'data-camera-settings-open', response.data)
+        self.assertIn(b'cameraCaptureSource', response.data)
 
     def test_redirects_the_misspelled_multi_camera_url(self):
         response = self.client.get('/multy-camera')

@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#171a18">
     <title>Multi-Camera Monitor - Stereo Lab</title>
     <style>
         :root {
@@ -24,19 +23,22 @@
         header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
         h1 { margin: 0; font-size: 21px; font-weight: 650; }
         .subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
-        .toolbar, .header-actions { display: flex; align-items: center; gap: 9px; }
+        .header-actions, .language-tools { display: flex; align-items: center; gap: 9px; }
+        .language-switch { display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; }
+        .language-switch button { min-width: 38px; min-height: 34px; border: 0; color: var(--muted); background: var(--panel); cursor: pointer; font-size: 11px; font-weight: 700; }
+        .language-switch button[aria-pressed="true"] { color: #1c2414; background: var(--accent); }
         .page-nav { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
         .page-nav a { padding: 8px 12px; border-radius: 3px; color: var(--muted); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
         .page-nav a:hover { color: var(--text); background: #262c28; }
         .page-nav a[aria-current="page"] { color: #1c2414; background: var(--accent); }
-        .page-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-        .action-button, select { min-height: 38px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--panel); }
-        .action-button { padding: 0 13px; cursor: pointer; font-weight: 650; text-decoration: none; }
+        .action-button, .icon-button { min-height: 38px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--panel); cursor: pointer; }
+        .action-button { padding: 0 13px; font-weight: 650; }
         .action-button.primary { border-color: var(--accent); color: #1c2414; background: var(--accent); }
-        .action-button:hover:not(:disabled) { filter: brightness(1.08); }
+        .icon-button { display: grid; width: 38px; place-items: center; padding: 0; }
+        .icon-button svg { width: 17px; height: 17px; }
+        button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .action-button:hover:not(:disabled), .icon-button:hover { filter: brightness(1.1); }
         .action-button:disabled { cursor: wait; opacity: .55; }
-        select { width: 100%; padding: 0 10px; }
-        button:focus-visible, select:focus-visible, input:focus-visible, video:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         .status { display: flex; align-items: center; gap: 8px; min-width: 110px; color: var(--muted); font-size: 12px; }
         .status::before { width: 8px; height: 8px; border-radius: 50%; background: #707a72; content: ""; }
         .status[data-state="live"]::before { background: var(--accent); box-shadow: 0 0 12px #c7f36b80; }
@@ -50,27 +52,13 @@
         .camera-head h2 { margin: 0; font-size: 13px; font-weight: 650; }
         .camera-state { color: var(--muted); font-size: 10px; text-transform: uppercase; }
         .camera-card[data-live="true"] .camera-state { color: var(--accent); }
-        .camera-config { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; }
         .feed { position: relative; display: grid; min-height: 0; flex: 1; place-items: center; overflow: hidden; background: #090b09; }
-        .feed video { display: block; width: 100%; height: 100%; object-fit: contain; }
-        .feed video[hidden] { display: none; }
+        .feed img, .feed video { display: block; width: 100%; height: 100%; object-fit: contain; }
+        .feed img[hidden], .feed video[hidden] { display: none; }
         .placeholder { display: grid; gap: 6px; padding: 12px; color: var(--muted); text-align: center; }
         .placeholder[hidden] { display: none; }
         .placeholder strong { color: #c3cdc4; font-size: 13px; font-weight: 600; }
         .placeholder span { font-size: 11px; }
-        .fullscreen-button { position: absolute; right: 8px; bottom: 8px; min-height: 30px; padding: 0 9px; border: 1px solid #ffffff40; border-radius: 3px; color: white; background: #101411c9; cursor: pointer; font-size: 10px; }
-        .feed:fullscreen { width: 100vw; height: 100vh; background: #080a08; }
-        .device-settings { max-height: 150px; overflow: auto; border-top: 1px solid var(--line); }
-        .device-settings summary { padding: 8px 10px; color: var(--muted); cursor: pointer; font-size: 11px; }
-        .device-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; padding: 0 10px 10px; }
-        .device-setting { display: grid; min-width: 0; gap: 5px; color: var(--muted); font-size: 10px; }
-        .device-setting-label { display: flex; justify-content: space-between; gap: 6px; }
-        .device-setting output { color: var(--accent); }
-        .device-setting input[type="range"] { width: 100%; accent-color: var(--accent); }
-        .device-setting input[type="checkbox"] { justify-self: start; accent-color: var(--accent); }
-        .device-setting select, .device-setting input[type="number"] { min-height: 30px; font-size: 11px; }
-        .camera-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 0 10px; color: var(--muted); font-size: 10px; }
-        .camera-card footer button { padding: 0; border: 0; color: var(--muted); background: none; cursor: pointer; font-size: 10px; text-decoration: underline; }
         .tap-panel { border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
         .tap-panel summary { padding: 10px 12px; cursor: pointer; font-size: 12px; font-weight: 650; }
         .tap-content { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 0 12px 11px; }
@@ -78,27 +66,36 @@
         .tap-option input { accent-color: var(--accent); }
         .tap-status { flex: 1 1 280px; margin: 0; color: var(--muted); font-size: 10px; }
         .tap-status[data-state="error"] { color: var(--danger); }
-        @media (max-width: 760px) {
+        #tapCameraTargets { display: flex; flex-wrap: wrap; gap: 10px; }
+        .camera-settings-dialog { width: min(760px, calc(100vw - 28px)); max-height: 90vh; padding: 0; overflow: auto; border: 1px solid #536052; border-radius: 6px; color: var(--text); background: var(--panel); }
+        .camera-settings-dialog::backdrop { background: #080a08c9; backdrop-filter: blur(3px); }
+        .camera-settings-form { padding: 22px; }
+        .camera-settings-heading { display: flex; justify-content: space-between; gap: 18px; }
+        .camera-settings-heading h2 { margin: 5px 0 8px; font-size: 20px; }
+        .camera-settings-heading p { max-width: 620px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+        .camera-settings-kicker { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+        .camera-settings-source-label { display: block; margin-top: 14px; color: var(--muted); font-size: 11px; }
+        .camera-settings-source { width: min(100%, 320px); min-height: 36px; margin-top: 5px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
+        .camera-settings-close { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; font-size: 22px; }
+        .camera-settings-table-wrap { margin-top: 20px; overflow-x: auto; }
+        .camera-settings-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .camera-settings-table th, .camera-settings-table td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+        .camera-settings-table thead th { color: var(--muted); font-size: 10px; font-weight: 650; }
+        .camera-settings-table th[scope="row"] { white-space: nowrap; }
+        .camera-settings-table input[type="text"], .camera-settings-table select { width: 100%; min-height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
+        .camera-settings-table input[type="checkbox"] { accent-color: var(--accent); }
+        .camera-settings-active { width: 62px; text-align: center !important; }
+        .camera-settings-message { min-height: 18px; margin: 12px 0 0; color: var(--muted); font-size: 11px; }
+        .camera-settings-message[data-state="error"] { color: var(--danger); }
+        .camera-settings-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 10px; }
+        .camera-settings-actions button { min-height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; }
+        .camera-settings-actions .camera-settings-primary { border-color: var(--accent); color: #1c2414; background: var(--accent); font-weight: 700; }
+        @media (max-width: 900px) {
             .shell { padding: 12px; }
             header { align-items: flex-start; flex-direction: column; }
-            .page-nav { width: 100%; }
-            .page-nav a { flex: 1; text-align: center; }
-            .header-actions, .toolbar { width: 100%; flex-wrap: wrap; }
-            .header-actions .action-button { flex: 1; text-align: center; }
+            .header-actions { width: 100%; flex-wrap: wrap; }
             .camera-grid { min-height: 0; grid-template-columns: 1fr; grid-template-rows: auto; }
-            .camera-card { min-height: 360px; }
-        }
-        @media (min-width: 761px) and (max-height: 720px) {
-            .shell { padding: 10px 14px; }
-            header { padding-bottom: 8px; }
-            main { gap: 7px; padding-top: 7px; }
-            .camera-grid { gap: 7px; }
-            .camera-config { padding: 5px 8px; }
-        }
-        @media (min-width: 761px) and (max-width: 1100px) {
-            header { flex-wrap: wrap; }
-            .page-nav { order: 3; flex-basis: 100%; }
-            .header-actions { flex-wrap: wrap; justify-content: flex-end; }
+            .camera-card { min-height: 300px; }
         }
     </style>
 </head>
@@ -107,20 +104,31 @@
         <header>
             <div>
                 <h1 data-copy="title">Multi-Camera Monitor</h1>
-                <div class="subtitle" data-copy="subtitle">Live local preview for up to four webcams</div>
+                <div class="subtitle" data-copy="subtitle">Concurrent preview for up to four webcams</div>
             </div>
             <nav class="page-nav" aria-label="Pages" data-copy-aria="pageNavigation">
                 <a href="/" data-copy="stereoPage">Stereo monitor</a>
                 <a href="/multi-camera" aria-current="page" data-copy="multiCameraPage">Multi-camera monitor</a>
             </nav>
             <div class="header-actions">
+                <div class="language-tools">
+                    <div class="language-switch" role="group" aria-label="Language">
+                        <button type="button" data-language="en">EN</button>
+                        <button type="button" data-language="hu">HU</button>
+                    </div>
+                    <button class="icon-button" type="button" data-camera-settings-open aria-label="Camera settings" title="Camera settings">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                            <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
+                            <path d="m19.4 13.5 1.1.9-1.4 2.4-1.4-.5a7.7 7.7 0 0 1-1.6.9l-.3 1.5h-2.8l-.3-1.5a7.7 7.7 0 0 1-1.6-.9l-1.4.5-1.4-2.4 1.1-.9a7.8 7.8 0 0 1 0-1.8l-1.1-.9 1.4-2.4 1.4.5a7.7 7.7 0 0 1 1.6-.9l.3-1.5h2.8l.3 1.5a7.7 7.7 0 0 1 1.6.9l1.4-.5 1.4 2.4-1.1.9a7.8 7.8 0 0 1 0 1.8Z"/>
+                        </svg>
+                    </button>
+                </div>
                 <span class="status" id="captureStatus" data-state="idle" role="status" data-copy="disconnected">Disconnected</span>
-                <button class="action-button" id="refreshCameras" type="button" data-copy="refresh">Refresh cameras</button>
-                <button class="action-button primary" id="toggleCapture" type="button" data-copy="connect">Connect selected</button>
+                <button class="action-button primary" id="toggleCapture" type="button" data-copy="connect">Connect active cameras</button>
             </div>
         </header>
         <main>
-            <div class="notice" id="notice" role="status" aria-live="polite" data-copy="choose">Select at least two different cameras, then connect. Feeds are captured by this browser and are not uploaded.</div>
+            <div class="notice" id="notice" role="status" aria-live="polite" data-copy="choose">Configure camera labels and active devices, then connect. Each enabled Linux camera is captured independently by the server.</div>
             <section class="camera-grid" id="cameraGrid" aria-label="Multi-camera live feeds"></section>
             <details class="tap-panel">
                 <summary data-copy="tapTitle">TAP-Net temporal tracking (preparation)</summary>
@@ -134,24 +142,17 @@
             </details>
         </main>
     </div>
+    {% include "camera_settings_modal.html" %}
     <script>
         const copy = {
             en: {
-                title: 'Multi-Camera Monitor', subtitle: 'Live local preview for up to four webcams',
+                title: 'Multi-Camera Monitor', subtitle: 'Concurrent preview for up to four webcams',
                 pageNavigation: 'Pages', stereoPage: 'Stereo monitor', multiCameraPage: 'Multi-camera monitor',
-                disconnected: 'Disconnected', connected: 'Connected', refresh: 'Refresh cameras',
-                connect: 'Connect selected', disconnect: 'Disconnect',
-                choose: 'Select at least two different cameras, then connect. Feeds are captured by this browser and are not uploaded.',
-                noCameras: 'No cameras found. Connect a webcam and refresh the list.',
-                camera: 'Camera {slot}', input: 'INPUT {slot}', notConnected: 'Not connected',
-                awaiting: 'Awaiting camera', connectHint: 'Choose a device above to include this input.',
-                chooseDevice: 'Choose a camera…', cameraNumber: 'Camera {index}', noHardware: 'No adjustable controls are exposed by this camera.',
-                settings: 'Camera settings', reset: 'Reset device controls', resolution: 'Stream: {width} × {height}',
-                unsupported: 'Camera controls are not available.', hardwareError: 'Could not read camera controls: {message}',
-                applied: 'Camera setting applied.', applyError: 'Could not apply this setting: {message}',
-                cameraError: 'Could not connect camera {slot}: {message}', duplicate: 'Choose a different device for each camera input.',
-                needTwo: 'Select at least two cameras to start the multi-camera monitor.',
-                connectedCount: '{count} camera feeds connected.', permissionError: 'Camera access failed: {message}',
+                disconnected: 'Disconnected', connected: 'Connected', connect: 'Connect active cameras',
+                disconnect: 'Disconnect cameras', choose: 'Configure camera labels and active devices, then connect. Browser mode uses webcams on this computer; Docker mode captures server devices.',
+                awaiting: 'Awaiting camera', inactive: 'Inactive', starting: 'Starting…', error: 'Camera error',
+                browserPermission: 'Allow camera access in your browser, then reconnect.',
+                browserMissing: 'No browser camera is available at index {index}.',
                 tapTitle: 'TAP-Net temporal tracking (preparation)', tapEnable: 'Enable TAP-Net tracking configuration',
                 composite: 'Composite output', saveTap: 'Save tracking targets',
                 tapUnavailable: 'Settings are preparatory only; TAP-Net inference is not installed.',
@@ -161,21 +162,13 @@
                 tapCamera: 'Track camera {slot}'
             },
             hu: {
-                title: 'Többkamerás monitor', subtitle: 'Élő helyi előnézet legfeljebb négy webkamerához',
+                title: 'Többkamerás monitor', subtitle: 'Párhuzamos előnézet legfeljebb négy webkamerához',
                 pageNavigation: 'Oldalak', stereoPage: 'Sztereó monitor', multiCameraPage: 'Többkamerás monitor',
-                disconnected: 'Leválasztva', connected: 'Csatlakoztatva', refresh: 'Kamerák frissítése',
-                connect: 'Kijelöltek csatlakoztatása', disconnect: 'Leválasztás',
-                choose: 'Válassz legalább két különböző kamerát, majd csatlakozz. A böngésző kezeli a képeket, feltöltés nem történik.',
-                noCameras: 'Nem található kamera. Csatlakoztass egyet, majd frissítsd a listát.',
-                camera: '{slot}. kamera', input: 'BEMENET {slot}', notConnected: 'Nincs csatlakoztatva',
-                awaiting: 'Várakozás a kamerára', connectHint: 'Válassz eszközt fent a bemenet használatához.',
-                chooseDevice: 'Válassz kamerát…', cameraNumber: '{index}. kamera', noHardware: 'A kamera nem tesz elérhetővé módosítható vezérlőket.',
-                settings: 'Kamerabeállítások', reset: 'Eszközvezérlők visszaállítása', resolution: 'Kép: {width} × {height}',
-                unsupported: 'A kameravezérlők nem érhetők el.', hardwareError: 'Nem olvashatók a kameravezérlők: {message}',
-                applied: 'Kamerabeállítás alkalmazva.', applyError: 'A beállítás nem alkalmazható: {message}',
-                cameraError: 'A(z) {slot}. kamera nem csatlakoztatható: {message}', duplicate: 'Minden bemenethez másik eszközt válassz.',
-                needTwo: 'A többkamerás monitor indításához válassz legalább két kamerát.',
-                connectedCount: '{count} kamerakép csatlakoztatva.', permissionError: 'A kamerához való hozzáférés nem sikerült: {message}',
+                disconnected: 'Leválasztva', connected: 'Csatlakoztatva', connect: 'Aktív kamerák csatlakoztatása',
+                disconnect: 'Kamerák leválasztása', choose: 'Állítsd be a kameracímkéket és az aktív eszközöket, majd csatlakozz. Böngésző módban az ezen a gépen lévő, Docker módban a szerver kameráit használja.',
+                awaiting: 'Várakozás a kamerára', inactive: 'Inaktív', starting: 'Indítás…', error: 'Kamerahiba',
+                browserPermission: 'Engedélyezd a kamerahasználatot a böngészőben, majd csatlakozz újra.',
+                browserMissing: 'Nem található böngészőkamera ezen az indexen: {index}.',
                 tapTitle: 'TAP-Net időbeli követés (előkészítés)', tapEnable: 'TAP-Net követési beállítás engedélyezése',
                 composite: 'Kompozit kimenet', saveTap: 'Követési célok mentése',
                 tapUnavailable: 'A beállítások csak előkészítő jellegűek; a TAP-Net követés nincs telepítve.',
@@ -193,12 +186,35 @@
         const grid = document.getElementById('cameraGrid');
         const status = document.getElementById('captureStatus');
         const notice = document.getElementById('notice');
-        const refreshButton = document.getElementById('refreshCameras');
         const toggleButton = document.getElementById('toggleCapture');
-        const slots = [];
-        let availableCameras = [];
-        let activeStreams = [];
+        const cameraCards = new Map();
         let capturing = false;
+        let pollTimer = null;
+        let captureSource = localStorage.getItem('stereoCameraSource') === 'docker' ? 'docker' : 'browser';
+        let runningSource = null;
+        let browserStreams = [];
+        let cameraClientId = sessionStorage.getItem('stereoCameraClientId');
+        if (!cameraClientId) {
+            cameraClientId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            sessionStorage.setItem('stereoCameraClientId', cameraClientId);
+        }
+
+        function getBrowserDeviceIndices() {
+            try {
+                const indexes = JSON.parse(localStorage.getItem('stereoBrowserDeviceIndices') || 'null');
+                if (
+                    Array.isArray(indexes)
+                    && indexes.length === 4
+                    && indexes.every(index => Number.isInteger(index) && index >= 0 && index < 4)
+                    && new Set(indexes).size === 4
+                ) {
+                    return indexes;
+                }
+            } catch (error) {
+                console.warn('Ignoring invalid browser camera index preferences.', error);
+            }
+            return [0, 1, 2, 3];
+        }
 
         document.documentElement.lang = language;
         document.querySelectorAll('[data-copy]').forEach(element => {
@@ -207,263 +223,246 @@
         document.querySelectorAll('[data-copy-aria]').forEach(element => {
             element.setAttribute('aria-label', tr(element.dataset.copyAria));
         });
+        document.querySelectorAll('[data-language]').forEach(button => {
+            button.setAttribute('aria-pressed', String(button.dataset.language === language));
+            button.addEventListener('click', () => {
+                localStorage.setItem('stereoLabLanguage', button.dataset.language);
+                location.reload();
+            });
+        });
 
-        function setNotice(text, state = '') {
-            notice.textContent = text;
+        function setStatus(message, state = '') {
             status.dataset.state = state || (capturing ? 'live' : 'idle');
-            status.textContent = capturing
-                ? tr('connected')
-                : state === 'error' ? text : tr('disconnected');
+            status.textContent = capturing ? tr('connected') : state === 'error' ? message : tr('disconnected');
+            notice.textContent = message;
         }
 
-        function createSlot(slot) {
+        function createCameraCard(slot) {
             const card = document.createElement('article');
             card.className = 'camera-card';
-            card.dataset.slot = slot;
             card.innerHTML = `
                 <div class="camera-head"><h2></h2><span class="camera-state"></span></div>
-                <div class="camera-config"><select aria-label="${tr('camera', { slot })}"></select><span class="camera-input-label"></span></div>
                 <div class="feed">
+                    <img alt="" hidden>
                     <video autoplay muted playsinline hidden></video>
-                    <div class="placeholder"><strong></strong><span></span></div>
-                    <button class="fullscreen-button" type="button" hidden>Full screen</button>
-                </div>
-                <details class="device-settings">
-                    <summary>${tr('settings')}</summary>
-                    <div class="device-controls"></div>
-                </details>
-                <footer><span class="resolution"></span><button type="button" class="reset-controls">${tr('reset')}</button></footer>`;
+                    <div class="placeholder"><strong>${tr('awaiting')}</strong><span></span></div>
+                </div>`;
             const item = {
-                slot, card, select: card.querySelector('select'), video: card.querySelector('video'),
-                placeholder: card.querySelector('.placeholder'), cameraState: card.querySelector('.camera-state'),
-                controls: card.querySelector('.device-controls'), resolution: card.querySelector('.resolution'),
-                fullscreen: card.querySelector('.fullscreen-button')
+                card,
+                title: card.querySelector('h2'),
+                state: card.querySelector('.camera-state'),
+                image: card.querySelector('img'),
+                video: card.querySelector('video'),
+                placeholder: card.querySelector('.placeholder'),
+                detail: card.querySelector('.placeholder span'),
+                active: false
             };
-            card.querySelector('h2').textContent = tr('camera', { slot });
-            card.querySelector('.camera-input-label').textContent = tr('input', { slot: String(slot).padStart(2, '0') });
-            card.querySelector('.placeholder strong').textContent = tr('awaiting');
-            card.querySelector('.placeholder span').textContent = tr('connectHint');
-            item.fullscreen.textContent = language === 'hu' ? 'Teljes képernyő' : 'Full screen';
-            item.select.addEventListener('change', () => renderHardwareControls(item));
-            item.fullscreen.addEventListener('click', async () => {
-                try {
-                    await item.video.parentElement.requestFullscreen();
-                } catch (error) {
-                    setNotice(error.message, 'error');
-                }
+            item.image.addEventListener('error', () => {
+                if (!capturing || !item.active) return;
+                item.image.hidden = true;
+                item.placeholder.hidden = false;
+                item.state.textContent = tr('error');
             });
-            item.video.addEventListener('dblclick', () => item.fullscreen.click());
-            card.querySelector('.reset-controls').addEventListener('click', () => resetHardwareControls(item));
+            item.video.addEventListener('loadeddata', () => {
+                if (!capturing) return;
+                item.card.dataset.live = 'true';
+                item.state.textContent = tr('connected');
+                item.placeholder.hidden = true;
+            });
+            cameraCards.set(slot, item);
             grid.append(card);
-            slots.push(item);
         }
 
-        function populateCameraLists() {
-            slots.forEach((item, slotIndex) => {
-                const selectedId = item.select.value;
-                item.select.replaceChildren(new Option(tr('chooseDevice'), ''));
-                availableCameras.forEach((camera, cameraIndex) => {
-                    const option = new Option(
-                        camera.label || tr('cameraNumber', { index: cameraIndex + 1 }),
-                        camera.deviceId
-                    );
-                    item.select.append(option);
-                });
-                if (availableCameras.some(camera => camera.deviceId === selectedId)) {
-                    item.select.value = selectedId;
-                } else if (!selectedId && availableCameras[slotIndex]) {
-                    item.select.value = availableCameras[slotIndex].deviceId;
-                }
-                item.select.disabled = capturing;
+        function renderCameraSettings(settings) {
+            captureSource = settings.captureSource;
+            settings.cameras.forEach(camera => {
+                const item = cameraCards.get(camera.slot);
+                item.title.textContent = camera.label;
+                item.image.alt = camera.label;
+                item.video.setAttribute('aria-label', camera.label);
+                item.active = camera.active;
+                item.deviceIndex = captureSource === 'browser'
+                    ? (settings.browserDeviceIndices || getBrowserDeviceIndices())[camera.slot - 1]
+                    : camera.deviceIndex;
+                item.card.dataset.active = String(camera.active);
+                item.detail.textContent = camera.active
+                    ? captureSource === 'docker'
+                        ? `/dev/video${camera.deviceIndex}`
+                        : `Browser camera ${camera.deviceIndex}`
+                    : tr('inactive');
+                item.state.textContent = camera.active ? tr('disconnected') : tr('inactive');
+            });
+            toggleButton.textContent = tr(capturing ? 'disconnect' : 'connect');
+        }
+
+        async function loadCameraSettings() {
+            const response = await fetch('/api/camera-settings');
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Request failed.');
+            renderCameraSettings({
+                ...result,
+                captureSource,
+                browserDeviceIndices: getBrowserDeviceIndices()
             });
         }
 
-        async function refreshCameras() {
-            if (!navigator.mediaDevices?.getUserMedia) {
-                throw new Error('Camera capture requires localhost or HTTPS.');
-            }
-            refreshButton.disabled = true;
-            try {
-                const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                permissionStream.getTracks().forEach(track => track.stop());
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                availableCameras = devices.filter(device => device.kind === 'videoinput');
-                populateCameraLists();
-                setNotice(availableCameras.length
-                    ? tr('choose')
-                    : tr('noCameras'));
-            } finally {
-                refreshButton.disabled = capturing;
-            }
-        }
-
-        function describeCapability(name) {
-            return name.replace(/([A-Z])/g, ' $1').replace(/^./, letter => letter.toUpperCase());
-        }
-
-        async function applyConstraint(item, name, value) {
-            const track = item.video.srcObject?.getVideoTracks()[0];
-            if (!track) return;
-            try {
-                await track.applyConstraints({ [name]: { exact: value } });
-                renderHardwareControls(item);
-                item.cameraState.textContent = tr('applied');
-            } catch (error) {
-                renderHardwareControls(item);
-                item.cameraState.textContent = tr('applyError', { message: error.message });
-            }
-        }
-
-        function renderHardwareControls(item) {
-            item.controls.replaceChildren();
-            const track = item.video.srcObject?.getVideoTracks()[0];
-            if (!track) {
-                item.resolution.textContent = '';
-                return;
-            }
-            let capabilities;
-            try {
-                capabilities = track.getCapabilities();
-            } catch (error) {
-                item.cameraState.textContent = tr('hardwareError', { message: error.message });
-                return;
-            }
-            const settings = track.getSettings();
-            let count = 0;
-            Object.entries(capabilities).forEach(([name, capability]) => {
-                if (name === 'deviceId' || name === 'groupId') return;
-                const field = document.createElement('label');
-                field.className = 'device-setting';
-                const label = document.createElement('span');
-                label.className = 'device-setting-label';
-                label.textContent = describeCapability(name);
-                field.append(label);
-                const current = settings[name];
-                if (Array.isArray(capability)) {
-                    const select = document.createElement('select');
-                    capability.forEach(value => select.add(new Option(String(value), String(value))));
-                    select.value = String(current ?? capability[0]);
-                    select.addEventListener('change', () => applyConstraint(item, name, select.value));
-                    field.append(select);
-                } else if (typeof capability === 'boolean') {
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.checked = Boolean(current);
-                    checkbox.addEventListener('change', () => applyConstraint(item, name, checkbox.checked));
-                    field.append(checkbox);
-                } else if (capability && Number.isFinite(capability.min) && Number.isFinite(capability.max)) {
-                    const numeric = name === 'width' || name === 'height';
-                    const input = document.createElement('input');
-                    input.type = numeric ? 'number' : 'range';
-                    input.min = capability.min;
-                    input.max = capability.max;
-                    input.step = capability.step || (Number.isInteger(capability.min) && Number.isInteger(capability.max) ? 1 : 'any');
-                    input.value = current ?? capability.min;
-                    const output = document.createElement('output');
-                    output.value = String(current ?? capability.min);
-                    label.append(output);
-                    input.addEventListener('input', () => { output.value = input.value; });
-                    input.addEventListener('change', () => applyConstraint(item, name, Number(input.value)));
-                    field.append(input);
+        async function updateCameraStatus() {
+            const response = await fetch('/api/cameras/status');
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Request failed.');
+            result.cameras.forEach(camera => {
+                const item = cameraCards.get(camera.slot);
+                if (!item) return;
+                if (camera.state === 'connected') {
+                    item.card.dataset.live = 'true';
+                    item.state.textContent = tr('connected');
+                    item.placeholder.hidden = true;
+                    item.image.hidden = false;
+                } else if (camera.state === 'error') {
+                    item.card.removeAttribute('data-live');
+                    item.state.textContent = `${tr('error')}: ${camera.error}`;
+                    item.detail.textContent = camera.error;
+                    item.placeholder.hidden = false;
+                    item.image.hidden = true;
                 } else {
-                    return;
+                    item.state.textContent = tr('starting');
                 }
-                item.controls.append(field);
-                count += 1;
             });
-            item.resolution.textContent = item.video.videoWidth && item.video.videoHeight
-                ? tr('resolution', { width: item.video.videoWidth, height: item.video.videoHeight })
-                : '';
-            item.cameraState.textContent = count ? tr('connected') : tr('unsupported');
-            if (!count) {
-                const message = document.createElement('p');
-                message.className = 'tap-status';
-                message.textContent = tr('noHardware');
-                item.controls.append(message);
-            }
-        }
-
-        async function resetHardwareControls(item) {
-            const track = item.video.srcObject?.getVideoTracks()[0];
-            if (!track) return;
-            try {
-                await track.applyConstraints({});
-                renderHardwareControls(item);
-            } catch (error) {
-                item.cameraState.textContent = tr('applyError', { message: error.message });
-            }
         }
 
         async function connectCameras() {
-            const selected = slots.filter(item => item.select.value);
-            if (selected.length < 2) throw new Error(tr('needTwo'));
-            const deviceIds = selected.map(item => item.select.value);
-            if (new Set(deviceIds).size !== deviceIds.length) throw new Error(tr('duplicate'));
-            activeStreams = [];
+            toggleButton.disabled = true;
             try {
-                for (const item of selected) {
-                    const camera = availableCameras.find(device => device.deviceId === item.select.value);
-                    try {
+                const activeItems = [...cameraCards.values()].filter(item => item.active);
+                if (!activeItems.length) throw new Error('Enable at least one camera in settings.');
+                if (captureSource === 'browser') {
+                    if (!navigator.mediaDevices?.getUserMedia) {
+                        throw new Error('Browser camera capture requires localhost or HTTPS.');
+                    }
+                    const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    permissionStream.getTracks().forEach(track => track.stop());
+                    const devices = (await navigator.mediaDevices.enumerateDevices())
+                        .filter(device => device.kind === 'videoinput');
+                    const missingIndex = activeItems.find(item => !devices[item.deviceIndex]);
+                    if (missingIndex) {
+                        throw new Error(tr('browserMissing', { index: missingIndex.deviceIndex }));
+                    }
+                    const results = await Promise.allSettled(activeItems.map(async item => {
                         const stream = await navigator.mediaDevices.getUserMedia({
                             video: {
-                                deviceId: { exact: item.select.value },
+                                deviceId: { exact: devices[item.deviceIndex].deviceId },
                                 width: { ideal: 640 },
                                 height: { ideal: 480 }
                             },
                             audio: false
                         });
-                        activeStreams.push({ item, stream });
+                        browserStreams.push(stream);
                         item.video.srcObject = stream;
                         await item.video.play();
-                        if (item.video.readyState < 2) {
-                            await new Promise(resolve => item.video.addEventListener('loadeddata', resolve, { once: true }));
-                        }
-                        item.card.dataset.live = 'true';
-                        item.placeholder.hidden = true;
-                        item.video.hidden = false;
-                        item.fullscreen.hidden = false;
-                        item.select.disabled = true;
-                        item.cameraState.textContent = camera?.label || tr('connected');
-                        renderHardwareControls(item);
-                    } catch (error) {
-                        throw new Error(tr('cameraError', { slot: item.slot, message: error.message }));
+                        return stream;
+                    }));
+                    const failed = results.find(result => result.status === 'rejected');
+                    if (failed) {
+                        browserStreams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
+                        browserStreams = [];
+                        activeItems.forEach(item => { item.video.srcObject = null; });
+                        throw failed.reason;
                     }
+                    activeItems.forEach(item => {
+                        item.video.hidden = false;
+                        item.placeholder.hidden = true;
+                        item.card.dataset.live = 'true';
+                        item.state.textContent = tr('connected');
+                    });
+                    capturing = true;
+                } else {
+                    const response = await fetch('/api/cameras/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ clientId: cameraClientId })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'Request failed.');
+                    capturing = true;
+                    result.cameras.forEach(camera => {
+                        const item = cameraCards.get(camera.slot);
+                        item.image.src = `/api/cameras/${camera.slot}/stream?start=${Date.now()}`;
+                        item.image.hidden = false;
+                        item.placeholder.hidden = true;
+                        item.state.textContent = tr('starting');
+                    });
                 }
-                capturing = true;
-                slots.filter(item => !item.select.value).forEach(item => {
-                    item.select.disabled = true;
-                    item.cameraState.textContent = tr('notConnected');
-                });
-                refreshButton.disabled = true;
+                runningSource = captureSource;
                 toggleButton.textContent = tr('disconnect');
-                toggleButton.disabled = false;
-                setNotice(tr('connectedCount', { count: selected.length }));
+                setStatus(tr('connected'), 'live');
+                if (runningSource === 'docker') {
+                    pollTimer = window.setInterval(() => {
+                        updateCameraStatus().catch(error => setStatus(error.message, 'error'));
+                    }, 1000);
+                    await updateCameraStatus();
+                }
             } catch (error) {
-                stopCameras();
-                throw error;
+                browserStreams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
+                browserStreams = [];
+                cameraCards.forEach(item => { item.video.srcObject = null; });
+                setStatus(error.message, 'error');
+            } finally {
+                toggleButton.disabled = false;
             }
         }
 
-        function stopCameras() {
+        async function disconnectCameras() {
             capturing = false;
-            activeStreams.forEach(({ item, stream }) => {
-                stream.getTracks().forEach(track => track.stop());
+            window.clearInterval(pollTimer);
+            pollTimer = null;
+            cameraCards.forEach(item => {
+                item.image.removeAttribute('src');
+                item.image.hidden = true;
+                item.video.srcObject?.getTracks().forEach(track => track.stop());
                 item.video.srcObject = null;
                 item.video.hidden = true;
-                item.fullscreen.hidden = true;
                 item.placeholder.hidden = false;
                 item.card.removeAttribute('data-live');
-                item.cameraState.textContent = tr('notConnected');
-                item.controls.replaceChildren();
-                item.resolution.textContent = '';
+                if (item.active) item.state.textContent = tr('disconnected');
             });
-            activeStreams = [];
-            slots.forEach(item => { item.select.disabled = false; });
-            refreshButton.disabled = false;
+            browserStreams = [];
             toggleButton.textContent = tr('connect');
-            status.dataset.state = 'idle';
-            status.textContent = tr('disconnected');
+            const stoppedSource = runningSource;
+            runningSource = null;
+            if (stoppedSource === 'docker') {
+                try {
+                    const response = await fetch('/api/cameras/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ clientId: cameraClientId })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'Request failed.');
+                } catch (error) {
+                    setStatus(error.message, 'error');
+                    return;
+                }
+            }
+            setStatus(tr('choose'));
         }
+
+        for (let slot = 1; slot <= 4; slot += 1) createCameraCard(slot);
+        toggleButton.addEventListener('click', () => {
+            if (capturing) disconnectCameras();
+            else connectCameras();
+        });
+        document.addEventListener('camera-settings-saved', async event => {
+            if (capturing) await disconnectCameras();
+            renderCameraSettings(event.detail);
+        });
+        window.addEventListener('pagehide', () => {
+            if (runningSource === 'docker') {
+                navigator.sendBeacon('/api/cameras/stop', new Blob(
+                    [JSON.stringify({ clientId: cameraClientId })],
+                    { type: 'application/json' }
+                ));
+            }
+        });
 
         function renderTapTargets(settings) {
             document.getElementById('tapEnabled').checked = settings.enabled;
@@ -492,29 +491,6 @@
             renderTapTargets(result);
         }
 
-        for (let slot = 1; slot <= 4; slot += 1) createSlot(slot);
-        refreshButton.addEventListener('click', async () => {
-            try {
-                await refreshCameras();
-            } catch (error) {
-                setNotice(tr('permissionError', { message: error.message }), 'error');
-            }
-        });
-        toggleButton.addEventListener('click', async () => {
-            if (capturing) {
-                stopCameras();
-                setNotice(tr('choose'));
-                return;
-            }
-            toggleButton.disabled = true;
-            try {
-                await connectCameras();
-            } catch (error) {
-                setNotice(error.message, 'error');
-            } finally {
-                toggleButton.disabled = false;
-            }
-        });
         document.getElementById('tapForm').addEventListener('submit', async event => {
             event.preventDefault();
             const button = document.getElementById('saveTapSettings');
@@ -543,18 +519,12 @@
                 button.disabled = false;
             }
         });
-        window.addEventListener('pagehide', stopCameras);
-        navigator.mediaDevices?.addEventListener('devicechange', () => {
-            if (!capturing) refreshCameras().catch(error => setNotice(error.message, 'error'));
-        });
+
+        loadCameraSettings().catch(error => setStatus(error.message, 'error'));
         loadTapSettings().catch(error => {
             const tapStatus = document.getElementById('tapStatus');
             tapStatus.textContent = tr('tapLoadError', { message: error.message });
             tapStatus.dataset.state = 'error';
-        });
-        refreshCameras().catch(error => {
-            setNotice(tr('permissionError', { message: error.message }), 'error');
-            status.dataset.state = 'error';
         });
     </script>
 </body>

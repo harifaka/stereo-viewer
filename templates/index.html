@@ -45,6 +45,8 @@
         .language-switch { display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; }
         .language-switch button { min-width: 42px; min-height: 34px; border: 0; color: var(--muted); background: var(--panel); cursor: pointer; font-size: 11px; font-weight: 700; }
         .language-switch button[aria-pressed="true"] { color: #1c2414; background: var(--accent); }
+        .camera-settings-open { display: grid; width: 36px; height: 36px; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--panel); cursor: pointer; }
+        .camera-settings-open svg { width: 17px; height: 17px; }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #707a72; }
         .status[data-state="live"] .status-dot { background: var(--accent); box-shadow: 0 0 12px #c7f36b80; }
         .status[data-state="error"] .status-dot { background: var(--danger); }
@@ -90,6 +92,29 @@
         dialog { width: min(1040px, calc(100vw - 28px)); max-height: min(92vh, 920px); padding: 0; overflow: auto; border: 1px solid #536052; border-radius: 5px; color: var(--text); background: var(--panel); }
         dialog::backdrop { background: #080a08c9; backdrop-filter: blur(3px); }
         .settings-form { padding: 20px; }
+        .camera-settings-dialog { width: min(760px, calc(100vw - 28px)); max-height: 90vh; padding: 0; overflow: auto; border: 1px solid #536052; border-radius: 6px; color: var(--text); background: var(--panel); }
+        .camera-settings-dialog::backdrop { background: #080a08c9; backdrop-filter: blur(3px); }
+        .camera-settings-form { padding: 22px; }
+        .camera-settings-heading { display: flex; justify-content: space-between; gap: 18px; }
+        .camera-settings-heading h2 { margin: 5px 0 8px; font-size: 20px; }
+        .camera-settings-heading p { max-width: 620px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+        .camera-settings-kicker { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+        .camera-settings-source-label { display: block; margin-top: 14px; color: var(--muted); font-size: 11px; }
+        .camera-settings-source { width: min(100%, 320px); min-height: 36px; margin-top: 5px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
+        .camera-settings-close { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; font-size: 22px; }
+        .camera-settings-table-wrap { margin-top: 20px; overflow-x: auto; }
+        .camera-settings-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .camera-settings-table th, .camera-settings-table td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+        .camera-settings-table thead th { color: var(--muted); font-size: 10px; font-weight: 650; }
+        .camera-settings-table th[scope="row"] { white-space: nowrap; }
+        .camera-settings-table input[type="text"], .camera-settings-table select { width: 100%; min-height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
+        .camera-settings-table input[type="checkbox"] { accent-color: var(--accent); }
+        .camera-settings-active { width: 62px; text-align: center !important; }
+        .camera-settings-message { min-height: 18px; margin: 12px 0 0; color: var(--muted); font-size: 11px; }
+        .camera-settings-message[data-state="error"] { color: var(--danger); }
+        .camera-settings-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 10px; }
+        .camera-settings-actions button { min-height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; }
+        .camera-settings-actions .camera-settings-primary { border-color: var(--accent); color: #1c2414; background: var(--accent); font-weight: 700; }
         .settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
         .settings-heading h3 { margin: 5px 0 0; font-size: 20px; font-weight: 600; }
         .settings-heading-copy { display: grid; gap: 6px; }
@@ -212,6 +237,12 @@
                     <button type="button" data-language="en" aria-pressed="true">EN</button>
                     <button type="button" data-language="hu" aria-pressed="false">HU</button>
                 </div>
+                <button class="camera-settings-open" type="button" data-camera-settings-open aria-label="Camera settings" title="Camera settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
+                        <path d="m19.4 13.5 1.1.9-1.4 2.4-1.4-.5a7.7 7.7 0 0 1-1.6.9l-.3 1.5h-2.8l-.3-1.5a7.7 7.7 0 0 1-1.6-.9l-1.4.5-1.4-2.4 1.1-.9a7.8 7.8 0 0 1 0-1.8l-1.1-.9 1.4-2.4 1.4.5a7.7 7.7 0 0 1 1.6-.9l.3-1.5h2.8l.3 1.5a7.7 7.7 0 0 1 1.6.9l1.4-.5 1.4 2.4-1.1.9a7.8 7.8 0 0 1 0 1.8Z"/>
+                    </svg>
+                </button>
                 <div class="status" id="status" data-state="idle" role="status"><span class="status-dot"></span><span id="statusText" data-i18n="camerasDisconnected">Cameras disconnected</span></div>
             </div>
         </header>
@@ -246,6 +277,7 @@
             <div class="notice" id="notice" aria-live="polite" data-i18n="selectTwoCameras">Select two cameras and connect to start a live depth feed.</div>
         </main>
     </div>
+    {% include "camera_settings_modal.html" %}
     <dialog id="advancedSettings" aria-labelledby="settingsTitle">
         <form class="settings-form" id="settingsForm">
             <div class="settings-heading">

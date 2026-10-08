@@ -1,0 +1,250 @@
+<dialog class="camera-settings-dialog" id="cameraSettingsDialog" aria-labelledby="cameraSettingsTitle">
+    <form class="camera-settings-form" id="cameraSettingsForm">
+        <div class="camera-settings-heading">
+            <div>
+                <div class="camera-settings-kicker" data-camera-settings-copy="kicker">Camera setup</div>
+                <h2 id="cameraSettingsTitle" data-camera-settings-copy="title">Camera source and mapping</h2>
+                <p data-camera-settings-copy="intro">Choose a capture source for this browser. Camera labels, indexes, and Active settings are shared by the server.</p>
+                <label class="camera-settings-source-label" for="cameraCaptureSource" data-camera-settings-copy="source">Capture source</label>
+                <select class="camera-settings-source" id="cameraCaptureSource">
+                    <option value="browser" data-camera-settings-copy="browserSource">Browser cameras</option>
+                    <option value="docker" data-camera-settings-copy="dockerSource">Docker / Linux devices</option>
+                </select>
+            </div>
+            <button class="camera-settings-close" type="button" data-camera-settings-close aria-label="Close camera settings">×</button>
+        </div>
+        <div class="camera-settings-table-wrap">
+            <table class="camera-settings-table">
+                <thead>
+                    <tr>
+                        <th scope="col" data-camera-settings-copy="slot">Slot</th>
+                        <th scope="col" data-camera-settings-copy="device">Camera index</th>
+                        <th scope="col" data-camera-settings-copy="label">Custom label / role</th>
+                        <th scope="col" data-camera-settings-copy="active">Active</th>
+                    </tr>
+                </thead>
+                <tbody id="cameraSettingsRows"></tbody>
+            </table>
+        </div>
+        <p class="camera-settings-message" id="cameraSettingsMessage" role="status" aria-live="polite"></p>
+        <div class="camera-settings-actions">
+            <button class="camera-settings-secondary" type="button" data-camera-settings-close data-camera-settings-copy="cancel">Cancel</button>
+            <button class="camera-settings-primary" id="saveCameraSettings" type="submit" data-camera-settings-copy="save">Save settings</button>
+        </div>
+    </form>
+</dialog>
+<script>
+    (() => {
+        const translations = {
+            en: {
+                kicker: 'Camera setup', title: 'Camera source and mapping',
+                intro: 'Choose the source for the Multi-Camera Monitor in this browser. Camera labels, indexes, and Active settings are shared by the server.',
+                source: 'Capture source', browserSource: 'Browser cameras', dockerSource: 'Docker / Linux devices',
+                slot: 'Slot', device: 'Camera index', label: 'Custom label / role', active: 'Active',
+                cancel: 'Cancel', save: 'Save settings', close: 'Close camera settings',
+                camera: 'Camera {slot}', browserOption: 'Browser camera {index}', dockerOption: '/dev/video{index} (index {index})',
+                duplicateBrowserIndexes: 'Choose a different browser camera index for each slot.',
+                loaded: 'Camera settings loaded.', saved: 'Camera settings saved.',
+                loadError: 'Could not load camera settings: {message}',
+                saveError: 'Could not save camera settings: {message}'
+            },
+            hu: {
+                kicker: 'Kamerabeállítás', title: 'Kameraforrás és kiosztás',
+                intro: 'Válaszd ki a Többkamerás monitor forrását ebben a böngészőben. A címkék, indexek és Aktív beállítások a szerver felhasználói között közösek.',
+                source: 'Rögzítési forrás', browserSource: 'Böngésző kamerái', dockerSource: 'Docker / Linux eszközök',
+                slot: 'Hely', device: 'Kameraindex', label: 'Egyéni címke / szerep', active: 'Aktív',
+                cancel: 'Mégse', save: 'Beállítások mentése', close: 'Kamerabeállítások bezárása',
+                camera: '{slot}. kamera', browserOption: 'Böngésző kamera {index}', dockerOption: '/dev/video{index} (index {index})',
+                duplicateBrowserIndexes: 'Minden kamerához külön böngésző-kameraindexet válassz.',
+                loaded: 'Kamerabeállítások betöltve.', saved: 'Kamerabeállítások mentve.',
+                loadError: 'A kamerabeállítások nem tölthetők be: {message}',
+                saveError: 'A kamerabeállítások nem menthetők: {message}'
+            }
+        };
+        const language = localStorage.getItem('stereoLabLanguage') === 'hu' ? 'hu' : 'en';
+        const text = (key, values = {}) => Object.entries(values).reduce(
+            (result, [name, value]) => result.replaceAll(`{${name}}`, value),
+            translations[language][key] || key
+        );
+        const dialog = document.getElementById('cameraSettingsDialog');
+        if (!dialog) return;
+        const form = document.getElementById('cameraSettingsForm');
+        const rows = document.getElementById('cameraSettingsRows');
+        const sourceSelect = document.getElementById('cameraCaptureSource');
+        const message = document.getElementById('cameraSettingsMessage');
+        const saveButton = document.getElementById('saveCameraSettings');
+        let draftCameras = [];
+        let renderedSource = 'browser';
+        let browserDeviceIndices = readBrowserDeviceIndices();
+
+        document.querySelectorAll('[data-camera-settings-copy]').forEach(element => {
+            element.textContent = text(element.dataset.cameraSettingsCopy);
+        });
+        document.querySelectorAll('[data-camera-settings-open]').forEach(button => {
+            button.setAttribute('aria-label', text('title'));
+            button.title = text('title');
+            button.addEventListener('click', async () => {
+                dialog.showModal();
+                message.textContent = '';
+                try {
+                    const response = await fetch('/api/camera-settings');
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'Request failed.');
+                    render({
+                        ...result,
+                        captureSource: localStorage.getItem('stereoCameraSource') === 'docker' ? 'docker' : 'browser'
+                    });
+                    message.textContent = text('loaded');
+                } catch (error) {
+                    message.textContent = text('loadError', { message: error.message });
+                    message.dataset.state = 'error';
+                }
+            });
+        });
+        document.querySelectorAll('[data-camera-settings-close]').forEach(button => {
+            button.addEventListener('click', () => dialog.close());
+        });
+        dialog.addEventListener('click', event => {
+            if (event.target === dialog) dialog.close();
+        });
+
+        function render(settings) {
+            sourceSelect.value = settings.captureSource;
+            renderedSource = settings.captureSource;
+            draftCameras = settings.cameras.map(camera => ({ ...camera }));
+            rows.replaceChildren();
+            settings.cameras.forEach(camera => {
+                const row = document.createElement('tr');
+                const slot = document.createElement('th');
+                slot.scope = 'row';
+                slot.textContent = text('camera', { slot: camera.slot });
+
+                const deviceCell = document.createElement('td');
+                const device = document.createElement('select');
+                device.name = 'deviceIndex';
+                device.setAttribute('aria-label', `${text('device')} ${camera.slot}`);
+                for (let index = 0; index < 4; index += 1) {
+                    const key = settings.captureSource === 'browser' ? 'browserOption' : 'dockerOption';
+                    const option = new Option(text(key, { index }), String(index));
+                    const selectedIndex = settings.captureSource === 'browser'
+                        ? browserDeviceIndices[camera.slot - 1]
+                        : camera.deviceIndex;
+                    option.selected = selectedIndex === index;
+                    device.add(option);
+                }
+                deviceCell.append(device);
+
+                const labelCell = document.createElement('td');
+                const label = document.createElement('input');
+                label.name = 'label';
+                label.type = 'text';
+                label.maxLength = 40;
+                label.required = true;
+                label.value = camera.label;
+                label.setAttribute('aria-label', `${text('label')} ${camera.slot}`);
+                labelCell.append(label);
+
+                const activeCell = document.createElement('td');
+                activeCell.className = 'camera-settings-active';
+                const active = document.createElement('input');
+                active.name = 'active';
+                active.type = 'checkbox';
+                active.checked = camera.active;
+                active.setAttribute('aria-label', `${text('active')} ${camera.slot}`);
+                activeCell.append(active);
+                row.append(slot, deviceCell, labelCell, activeCell);
+                rows.append(row);
+            });
+        }
+
+        function readCameras() {
+            return [...rows.querySelectorAll('tr')].map((row, index) => ({
+                slot: index + 1,
+                deviceIndex: Number(row.querySelector('[name="deviceIndex"]').value),
+                label: row.querySelector('[name="label"]').value,
+                active: row.querySelector('[name="active"]').checked
+            }));
+        }
+
+        function readBrowserDeviceIndices() {
+            try {
+                const indexes = JSON.parse(localStorage.getItem('stereoBrowserDeviceIndices') || 'null');
+                if (
+                    Array.isArray(indexes)
+                    && indexes.length === 4
+                    && indexes.every(index => Number.isInteger(index) && index >= 0 && index < 4)
+                    && new Set(indexes).size === 4
+                ) {
+                    return indexes;
+                }
+            } catch (error) {
+                console.warn('Ignoring invalid browser camera index preferences.', error);
+            }
+            return [0, 1, 2, 3];
+        }
+
+        sourceSelect.addEventListener('change', () => {
+            const visibleCameras = readCameras();
+            if (renderedSource === 'docker') {
+                draftCameras = visibleCameras;
+            } else {
+                browserDeviceIndices = visibleCameras.map(camera => camera.deviceIndex);
+                draftCameras = visibleCameras.map((camera, index) => ({
+                    ...camera,
+                    deviceIndex: draftCameras[index].deviceIndex
+                }));
+            }
+            render({ captureSource: sourceSelect.value, cameras: draftCameras });
+        });
+
+        form.addEventListener('submit', async event => {
+            event.preventDefault();
+            message.textContent = '';
+            message.dataset.state = '';
+            saveButton.disabled = true;
+            const visibleCameras = readCameras();
+            if (
+                sourceSelect.value === 'browser'
+                && new Set(visibleCameras.map(camera => camera.deviceIndex)).size !== 4
+            ) {
+                message.textContent = text('duplicateBrowserIndexes');
+                message.dataset.state = 'error';
+                saveButton.disabled = false;
+                return;
+            }
+            if (sourceSelect.value === 'browser') {
+                browserDeviceIndices = visibleCameras.map(camera => camera.deviceIndex);
+            }
+            const cameras = visibleCameras.map((camera, index) => ({
+                ...camera,
+                deviceIndex: sourceSelect.value === 'browser'
+                    ? draftCameras[index].deviceIndex
+                    : camera.deviceIndex
+            }));
+            try {
+                const response = await fetch('/api/camera-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cameras })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Request failed.');
+                localStorage.setItem('stereoCameraSource', sourceSelect.value);
+                localStorage.setItem('stereoBrowserDeviceIndices', JSON.stringify(browserDeviceIndices));
+                const savedSettings = {
+                    ...result,
+                    captureSource: sourceSelect.value,
+                    browserDeviceIndices
+                };
+                render(savedSettings);
+                message.textContent = text('saved');
+                document.dispatchEvent(new CustomEvent('camera-settings-saved', { detail: savedSettings }));
+            } catch (error) {
+                message.textContent = text('saveError', { message: error.message });
+                message.dataset.state = 'error';
+            } finally {
+                saveButton.disabled = false;
+            }
+        });
+    })();
+</script>

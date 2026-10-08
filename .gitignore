@@ -64,6 +64,8 @@ db.sqlite3-journal
 # Flask stuff:
 instance/
 .webassets-cache
+camera-config/
+config/cameras.json
 
 # Scrapy stuff:
 .scrapy

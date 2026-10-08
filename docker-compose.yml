@@ -3,6 +3,10 @@ services:
     build: .
     ports:
       - "5000:5000"
+    environment:
+      CAMERA_SETTINGS_PATH: /app/config/cameras.json
+    volumes:
+      - "./camera-config:/app/config"
     devices:
       - "/dev/video0:/dev/video0"
       - "/dev/video1:/dev/video1"

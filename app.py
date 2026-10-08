@@ -1,9 +1,12 @@
 import json
 import logging
 import math
+import os
+import tempfile
 import time
 from io import BytesIO
-from threading import Lock
+from pathlib import Path
+from threading import Condition, Event, Lock, Thread
 
 from flask import Flask, render_template, Response, request, jsonify, send_file, redirect, url_for
 import cv2
@@ -38,6 +41,254 @@ pose_model = None
 pose_settings = {'enabled': False, 'view': 'composite', 'confidence': 0.35}
 tap_settings_lock = Lock()
 tap_settings = {'enabled': False, 'cameraSlots': [1, 2], 'composite': True}
+CAMERA_SETTINGS_PATH = Path(os.environ.get('CAMERA_SETTINGS_PATH', 'config/cameras.json'))
+DEFAULT_CAMERA_SETTINGS = {
+    'cameras': [
+        {
+            'slot': slot,
+            'label': f'Camera {slot}',
+            'deviceIndex': slot - 1,
+            'active': slot <= 2,
+        }
+        for slot in range(1, 5)
+    ]
+}
+
+
+def validate_camera_settings(data):
+    if not isinstance(data, dict) or not isinstance(data.get('cameras'), list):
+        raise ValueError('Camera settings must contain a cameras list.')
+    if len(data['cameras']) != 4:
+        raise ValueError('Configure exactly four camera slots.')
+
+    cameras = []
+    device_indices = set()
+    for expected_slot, camera in enumerate(data['cameras'], start=1):
+        if (
+            not isinstance(camera, dict)
+            or type(camera.get('slot')) is not int
+            or camera.get('slot') != expected_slot
+        ):
+            raise ValueError('Camera slots must be numbered 1 through 4 in order.')
+        label = camera.get('label')
+        if not isinstance(label, str) or not label.strip() or len(label.strip()) > 40:
+            raise ValueError('Each camera label must contain 1 to 40 characters.')
+        device_index = camera.get('deviceIndex')
+        if type(device_index) is not int or device_index not in range(4):
+            raise ValueError('Camera device indexes must be integers from 0 to 3.')
+        if device_index in device_indices:
+            raise ValueError('Each camera must use a different device index.')
+        device_indices.add(device_index)
+        active = camera.get('active')
+        if not isinstance(active, bool):
+            raise ValueError('Each camera active value must be a boolean.')
+        cameras.append({
+            'slot': expected_slot,
+            'label': label.strip(),
+            'deviceIndex': device_index,
+            'active': active,
+        })
+    return {'cameras': cameras}
+
+
+def load_camera_settings():
+    try:
+        with CAMERA_SETTINGS_PATH.open(encoding='utf-8') as config_file:
+            return validate_camera_settings(json.load(config_file))
+    except (OSError, json.JSONDecodeError, ValueError):
+        app.logger.exception('Could not load camera settings from %s', CAMERA_SETTINGS_PATH)
+        raise
+
+
+def save_camera_settings(settings):
+    CAMERA_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            dir=CAMERA_SETTINGS_PATH.parent,
+            delete=False,
+        ) as config_file:
+            temporary_path = Path(config_file.name)
+            json.dump(settings, config_file, indent=2)
+            config_file.write('\n')
+        os.replace(temporary_path, CAMERA_SETTINGS_PATH)
+    except OSError:
+        if temporary_path and temporary_path.exists():
+            temporary_path.unlink()
+        app.logger.exception('Could not save camera settings to %s', CAMERA_SETTINGS_PATH)
+        raise
+
+
+class CameraStream:
+    def __init__(self, slot, label, device_index):
+        self.slot = slot
+        self.label = label
+        self.device_index = device_index
+        self._condition = Condition()
+        self._stop_event = Event()
+        self._frame = None
+        self._state = 'starting'
+        self._error = None
+        self._thread = Thread(target=self._capture, name=f'camera-{slot}', daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self.request_stop()
+        self.join()
+
+    def request_stop(self):
+        self._stop_event.set()
+        with self._condition:
+            self._condition.notify_all()
+
+    def join(self):
+        if self._thread.is_alive():
+            self._thread.join(timeout=3)
+
+    def status(self):
+        with self._condition:
+            return {
+                'slot': self.slot,
+                'label': self.label,
+                'deviceIndex': self.device_index,
+                'state': self._state,
+                'error': self._error,
+            }
+
+    def frames(self):
+        last_frame = None
+        while not self._stop_event.is_set():
+            with self._condition:
+                self._condition.wait_for(
+                    lambda: self._frame is not None and self._frame is not last_frame
+                    or self._stop_event.is_set(),
+                    timeout=1,
+                )
+                frame = self._frame
+                state = self._state
+            if self._stop_event.is_set():
+                break
+            if frame is None or frame is last_frame:
+                if state == 'error':
+                    break
+                continue
+            last_frame = frame
+            yield (
+                b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
+                + frame
+                + b'\r\n'
+            )
+
+    def _capture(self):
+        capture = None
+        try:
+            capture = cv2.VideoCapture(self.device_index)
+            if not capture.isOpened():
+                raise RuntimeError(f'Could not open /dev/video{self.device_index}.')
+            with self._condition:
+                self._state = 'connected'
+                self._condition.notify_all()
+            while not self._stop_event.is_set():
+                success, frame = capture.read()
+                if not success:
+                    raise RuntimeError(f'Could not read from /dev/video{self.device_index}.')
+                encoded, buffer = cv2.imencode('.jpg', frame)
+                if not encoded:
+                    raise RuntimeError(f'Could not encode a frame from /dev/video{self.device_index}.')
+                with self._condition:
+                    self._frame = buffer.tobytes()
+                    self._condition.notify_all()
+        except Exception as error:
+            with self._condition:
+                self._state = 'error'
+                self._error = str(error)
+                self._condition.notify_all()
+            app.logger.exception(
+                'Camera slot %s failed for /dev/video%s',
+                self.slot,
+                self.device_index,
+            )
+        finally:
+            if capture is not None:
+                capture.release()
+            with self._condition:
+                if self._state != 'error':
+                    self._state = 'disconnected'
+                self._condition.notify_all()
+
+
+class CameraStreamManager:
+    def __init__(self):
+        self._lock = Lock()
+        self._streams = {}
+        self._running = False
+        self._clients = set()
+
+    def start(self, settings, client_id):
+        with self._lock:
+            if client_id not in self._clients:
+                if not self._running:
+                    self._running = True
+                    self._replace_streams(settings)
+                self._clients.add(client_id)
+
+    def stop(self, client_id=None):
+        with self._lock:
+            if client_id is not None:
+                self._clients.discard(client_id)
+                if self._clients:
+                    return
+            else:
+                self._clients.clear()
+            streams = list(self._streams.values())
+            self._streams = {}
+            self._running = False
+            for stream in streams:
+                stream.request_stop()
+            for stream in streams:
+                stream.join()
+
+    def configure(self, settings):
+        with self._lock:
+            was_running = self._running
+            old_streams = list(self._streams.values()) if was_running else []
+            if was_running:
+                for stream in old_streams:
+                    stream.request_stop()
+                for stream in old_streams:
+                    stream.join()
+                self._streams = {}
+                self._replace_streams(settings)
+
+    def _replace_streams(self, settings):
+        self._streams = {
+            camera['slot']: CameraStream(
+                camera['slot'],
+                camera['label'],
+                camera['deviceIndex'],
+            )
+            for camera in settings['cameras']
+            if camera['active']
+        }
+        for stream in self._streams.values():
+            stream.start()
+
+    def stream(self, slot):
+        with self._lock:
+            return self._streams.get(slot)
+
+    def status(self):
+        with self._lock:
+            return [stream.status() for stream in self._streams.values()]
+
+
+camera_settings_lock = Lock()
+camera_settings = load_camera_settings() if CAMERA_SETTINGS_PATH.is_file() else DEFAULT_CAMERA_SETTINGS
+camera_stream_manager = CameraStreamManager()
 CALIBRATION_VIEWS_REQUIRED = 8
 COLOR_MAPS = {
     'TURBO': cv2.COLORMAP_TURBO,
@@ -830,6 +1081,72 @@ def tap_settings_endpoint():
         'available': False,
         'status': 'configuration_only',
     })
+
+
+@app.route('/api/camera-settings', methods=['GET', 'POST'])
+def camera_settings_endpoint():
+    global camera_settings
+    if request.method == 'GET':
+        with camera_settings_lock:
+            return jsonify(camera_settings)
+
+    data = request.get_json(silent=True)
+    try:
+        updated = validate_camera_settings(data)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    with camera_settings_lock:
+        changed = updated != camera_settings
+        if changed or not CAMERA_SETTINGS_PATH.is_file():
+            try:
+                save_camera_settings(updated)
+            except OSError as error:
+                return jsonify({'error': f'Could not persist camera settings: {error}'}), 500
+        if changed:
+            camera_settings = updated
+            camera_stream_manager.configure(camera_settings)
+        return jsonify(camera_settings)
+
+
+@app.route('/api/cameras/start', methods=['POST'])
+def start_cameras_endpoint():
+    data = request.get_json(silent=True)
+    client_id = data.get('clientId') if isinstance(data, dict) else None
+    if not isinstance(client_id, str) or not 8 <= len(client_id) <= 100:
+        return jsonify({'error': 'A valid camera client ID is required.'}), 400
+    with camera_settings_lock:
+        active_cameras = [camera for camera in camera_settings['cameras'] if camera['active']]
+        if not active_cameras:
+            return jsonify({'error': 'Enable at least one camera before connecting.'}), 400
+        camera_stream_manager.start(camera_settings, client_id)
+    return jsonify({'status': 'starting', 'cameras': camera_stream_manager.status()})
+
+
+@app.route('/api/cameras/stop', methods=['POST'])
+def stop_cameras_endpoint():
+    data = request.get_json(silent=True)
+    client_id = data.get('clientId') if isinstance(data, dict) else None
+    if not isinstance(client_id, str) or not 8 <= len(client_id) <= 100:
+        return jsonify({'error': 'A valid camera client ID is required.'}), 400
+    camera_stream_manager.stop(client_id)
+    return jsonify({'status': 'stopped'})
+
+
+@app.route('/api/cameras/status', methods=['GET'])
+def camera_status_endpoint():
+    return jsonify({'cameras': camera_stream_manager.status()})
+
+
+@app.route('/api/cameras/<int:slot>/stream')
+def camera_stream_endpoint(slot):
+    stream = camera_stream_manager.stream(slot)
+    if stream is None:
+        return jsonify({'error': 'This camera slot is not active.'}), 404
+    return Response(
+        stream.frames(),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={'Cache-Control': 'no-store'},
+    )
 
 
 @app.route('/api/disparity', methods=['POST'])
