@@ -3,12 +3,13 @@
     {
       "name": "Default",
       "files": [
-        ".vscode/changelists.json",
         "ROADMAP.md",
+        ".vscode/changelists.json",
+        "README.md",
         "app.py",
         "templates/index.html",
-        "README.md",
-        "requirements.txt"
+        "templates/multi_camera.html",
+        "tests/test_tap_settings.py"
       ]
     }
   ],

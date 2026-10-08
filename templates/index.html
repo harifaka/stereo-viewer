@@ -37,6 +37,11 @@
         .brand-copy .eyebrow { margin-top: 4px; }
         .status { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
         .header-tools { display: flex; align-items: center; gap: 18px; }
+        .page-nav { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+        .page-nav a { padding: 8px 12px; border-radius: 3px; color: var(--muted); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+        .page-nav a:hover { color: var(--text); background: var(--panel-raised); }
+        .page-nav a[aria-current="page"] { color: #1c2414; background: var(--accent); }
+        .page-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         .language-switch { display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; }
         .language-switch button { min-width: 42px; min-height: 34px; border: 0; color: var(--muted); background: var(--panel); cursor: pointer; font-size: 11px; font-weight: 700; }
         .language-switch button[aria-pressed="true"] { color: #1c2414; background: var(--accent); }
@@ -165,6 +170,8 @@
         @media (max-width: 620px) {
             .shell { padding: 18px 14px 32px; }
             header, .toolbar { align-items: flex-start; flex-direction: column; }
+            .page-nav { width: 100%; }
+            .page-nav a { flex: 1; text-align: center; }
             .header-tools { width: 100%; justify-content: space-between; }
             .toolbar { gap: 14px; }
             .actions { width: 100%; align-items: stretch; flex-wrap: wrap; }
@@ -196,13 +203,17 @@
                 <div class="brand-mark" aria-hidden="true">SV</div>
                 <div class="brand-copy"><h1>Stereo Lab</h1><div class="eyebrow" data-i18n="liveDepthWorkstation">Live depth workstation</div></div>
             </div>
-                <div class="header-tools">
-                    <div class="language-switch" role="group" aria-label="Language" data-i18n-aria="language">
-                        <button type="button" data-language="en" aria-pressed="true">EN</button>
-                        <button type="button" data-language="hu" aria-pressed="false">HU</button>
-                    </div>
-                    <div class="status" id="status" data-state="idle" role="status"><span class="status-dot"></span><span id="statusText" data-i18n="camerasDisconnected">Cameras disconnected</span></div>
+            <nav class="page-nav" aria-label="Pages" data-i18n-aria="pageNavigation">
+                <a href="/" aria-current="page" data-i18n="stereoMonitor">Stereo monitor</a>
+                <a href="/multi-camera" data-i18n="multiCameraMonitor">Multi-camera monitor</a>
+            </nav>
+            <div class="header-tools">
+                <div class="language-switch" role="group" aria-label="Language" data-i18n-aria="language">
+                    <button type="button" data-language="en" aria-pressed="true">EN</button>
+                    <button type="button" data-language="hu" aria-pressed="false">HU</button>
                 </div>
+                <div class="status" id="status" data-state="idle" role="status"><span class="status-dot"></span><span id="statusText" data-i18n="camerasDisconnected">Cameras disconnected</span></div>
+            </div>
         </header>
         <main>
             <div class="toolbar">
@@ -369,7 +380,7 @@
         const compositePoseOverlay = document.getElementById('compositePoseOverlay');
         const poseSettingsDialog = document.getElementById('poseSettingsDialog');
         const translations = {
-            liveDepthWorkstation: ['Live depth workstation', 'Valós idejű mélységmérés'], camerasDisconnected: ['Cameras disconnected', 'A kamerák nincsenek csatlakoztatva'],
+            liveDepthWorkstation: ['Live depth workstation', 'Valós idejű mélységmérés'], pageNavigation: ['Pages', 'Oldalak'], multiCameraMonitor: ['Multi-camera monitor', 'Többkamerás monitor'], camerasDisconnected: ['Cameras disconnected', 'A kamerák nincsenek csatlakoztatva'],
             captureDisparity: ['Capture / disparity', 'Felvétel / parallaxis'], stereoMonitor: ['Stereo monitor', 'Sztereó monitor'], refreshCameras: ['Refresh cameras', 'Kamerák frissítése'], detailedSettings: ['Detailed settings', 'Részletes beállítások'],
             settingsTooltip: ['Tune stereo matching to improve depth-map detail, reduce noise, or adjust the color palette.', 'A sztereó illesztés finomhangolása a részletesebb mélységtérképért, a zaj csökkentéséért vagy a színpaletta módosításáért.'],
             left: ['Left', 'Bal'], right: ['Right', 'Jobb'], leftCamera: ['Left camera', 'Bal kamera'], rightCamera: ['Right camera', 'Jobb kamera'], connectCameras: ['Connect cameras', 'Kamerák csatlakoztatása'],

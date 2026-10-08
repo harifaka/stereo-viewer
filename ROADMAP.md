@@ -59,7 +59,8 @@ This document outlines the development roadmap for a Dockerized stereoscopic vis
 **Goal:** Move beyond basic stereo vision into industrial-grade multi-sensor fusion, supporting asymmetrical camera setups, thermal imaging, and moving environments.
 
 - [ ] **Dynamic Multi-Camera Architecture**
-  - Refactor backend to initialize 3 or 4 video streams dynamically.
+  - [x] Add a browser-based full-window monitor for up to four distinct local camera feeds with per-camera browser-exposed controls.
+  - [ ] Process three or four camera streams in the backend, beyond the existing two-camera stereo pipeline.
   - Update UI to allow switching between different processing modes (MVS, Thermal, SLAM).
 - [ ] **Multi-View Stereo (MVS) & Feature Matching**
   - Implement ORB/SIFT feature extraction for asymmetrical (non-stereo) camera placements.
@@ -84,8 +85,9 @@ This document outlines the development roadmap for a Dockerized stereoscopic vis
 **Goal:** Eliminate disparity flickering and stabilize tracking dynamically using TAP-Net for temporal consistency.
 
 - [ ] **TAP-Net Integration**
+  - [x] Add preparatory settings for selecting individual camera inputs and the composite output as tracking targets.
   - Deploy Google's TAP-Net in the CUDA pipeline for temporal point tracking across subsequent frames, even through occlusions.
-  - Update settings UI to toggle tracking on Left/Right streams, Composite, or both.
+  - Connect the target settings to live inference on selected camera streams and the composite.
 - [ ] **Temporal Depth Smoothing**
   - Use TAP-Net trajectories to predict and fill in missing disparity data when objects are temporarily hidden.
   - Smooth noisy SGBM/MVS depth measurements by forcing temporal consistency on known physical points.

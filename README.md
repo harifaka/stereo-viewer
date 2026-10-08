@@ -26,6 +26,12 @@ On Windows, connect both cameras before opening the page, allow camera access in
 
 Open **Detailed settings** to tune StereoSGBM when the depth map is too noisy, misses useful detail, or needs a different search span or display palette. Hover over a setting for a short explanation of its effect. With both cameras connected, select **Start preview** to see a separate live disparity preview calculated from the draft values; it does not change the main depth view or the active settings. Adjustments update the preview as it runs. Choose **Apply settings** to save the current values, or **Cancel**, **Close**, or Escape to discard the draft and restore the last applied values. The disparity view scales with the available layout, and clicking either live camera feed or the disparity image opens that view full screen. Press Escape to leave full screen.
 
+### Multi-Camera Monitor
+
+Open **Multi-camera monitor** from the shared **Pages** panel on either page for a viewport-filling live preview of up to four distinct webcams. Choose the cameras for each input, connect at least two, then expand an input's **Camera settings** to adjust the browser-exposed controls for that specific camera. Feeds stay in the browser and are not uploaded on this page; this monitor is a capture/preview foundation and does not yet run multi-view stereo, thermal fusion, or network streams.
+
+The **TAP-Net temporal tracking** section saves preparatory target selections for individual camera inputs and the composite output. The TAP-Net model/runtime is not integrated yet, so saving these settings does not run tracking. Configuration is held by the running Flask process and resets when it restarts.
+
 ### Camera Hardware Controls
 
 Open **Detailed settings** > **Camera hardware** while the stereo pair is connected. Choose the left or right input, then select a discovered camera device to switch that input without stopping the other stream. The panel reads each active video track's browser-reported capabilities and creates controls for the options that camera and browser expose, including supported focus/white-balance/exposure modes, numeric controls such as focus distance, zoom, brightness, and frame rate, and supported width/height values. Changes apply immediately to the selected camera; **Reset device controls** asks the browser to restore its defaults for that track.

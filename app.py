@@ -5,7 +5,7 @@ import time
 from io import BytesIO
 from threading import Lock
 
-from flask import Flask, render_template, Response, request, jsonify, send_file
+from flask import Flask, render_template, Response, request, jsonify, send_file, redirect, url_for
 import cv2
 import numpy as np
 from reportlab.lib.units import mm
@@ -36,6 +36,8 @@ pose_settings_lock = Lock()
 pose_model_lock = Lock()
 pose_model = None
 pose_settings = {'enabled': False, 'view': 'composite', 'confidence': 0.35}
+tap_settings_lock = Lock()
+tap_settings = {'enabled': False, 'cameraSlots': [1, 2], 'composite': True}
 CALIBRATION_VIEWS_REQUIRED = 8
 COLOR_MAPS = {
     'TURBO': cv2.COLORMAP_TURBO,
@@ -211,6 +213,31 @@ def validate_pose_settings(data):
     if not math.isfinite(confidence) or not 0.1 <= confidence <= 0.9:
         raise ValueError('confidence must be between 0.1 and 0.9.')
     return {'enabled': enabled, 'view': view, 'confidence': confidence}
+
+
+def validate_tap_settings(data):
+    if not isinstance(data, dict):
+        raise ValueError('TAP-Net settings must be a JSON object.')
+    enabled = data.get('enabled', tap_settings['enabled'])
+    if not isinstance(enabled, bool):
+        raise ValueError('enabled must be a boolean.')
+    camera_slots = data.get('cameraSlots', tap_settings['cameraSlots'])
+    if not isinstance(camera_slots, list):
+        raise ValueError('cameraSlots must be a list.')
+    if any(type(slot) is not int or slot not in (1, 2, 3, 4) for slot in camera_slots):
+        raise ValueError('cameraSlots may contain only integers from 1 to 4.')
+    if len(set(camera_slots)) != len(camera_slots):
+        raise ValueError('cameraSlots must not contain duplicates.')
+    composite = data.get('composite', tap_settings['composite'])
+    if not isinstance(composite, bool):
+        raise ValueError('composite must be a boolean.')
+    if enabled and not camera_slots and not composite:
+        raise ValueError('Select at least one camera or the composite view.')
+    return {
+        'enabled': enabled,
+        'cameraSlots': sorted(camera_slots),
+        'composite': composite,
+    }
 
 
 def run_pose_model(frame, confidence, tracking):
@@ -757,6 +784,16 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/multi-camera')
+def multi_camera():
+    return render_template('multi_camera.html')
+
+
+@app.route('/multy-camera')
+def multi_camera_spelling_alias():
+    return redirect(url_for('multi_camera'), code=302)
+
+
 @app.route('/api/pose-settings', methods=['GET', 'POST'])
 def pose_settings_endpoint():
     global pose_settings
@@ -771,6 +808,28 @@ def pose_settings_endpoint():
     with pose_settings_lock:
         pose_settings = updated
     return jsonify(pose_settings.copy())
+
+
+@app.route('/api/tap-settings', methods=['GET', 'POST'])
+def tap_settings_endpoint():
+    global tap_settings
+    if request.method == 'GET':
+        with tap_settings_lock:
+            settings = tap_settings.copy()
+    else:
+        data = request.get_json(silent=True)
+        try:
+            updated = validate_tap_settings(data)
+        except ValueError as error:
+            return jsonify({'error': str(error)}), 400
+        with tap_settings_lock:
+            tap_settings = updated
+            settings = tap_settings.copy()
+    return jsonify({
+        **settings,
+        'available': False,
+        'status': 'configuration_only',
+    })
 
 
 @app.route('/api/disparity', methods=['POST'])

@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#171a18">
+    <title>Multi-Camera Monitor - Stereo Lab</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --page: #171a18;
+            --panel: #202522;
+            --line: #39413b;
+            --text: #f0f2ed;
+            --muted: #9da79f;
+            --accent: #c7f36b;
+            --danger: #ff9b88;
+            font-family: "Bahnschrift", "Segoe UI Variable", "Segoe UI", sans-serif;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; min-height: 100vh; color: var(--text); background: var(--page); }
+        button, select, input { font: inherit; }
+        .shell { display: flex; min-height: 100vh; flex-direction: column; padding: 18px 22px; }
+        header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+        h1 { margin: 0; font-size: 21px; font-weight: 650; }
+        .subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
+        .toolbar, .header-actions { display: flex; align-items: center; gap: 9px; }
+        .page-nav { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+        .page-nav a { padding: 8px 12px; border-radius: 3px; color: var(--muted); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+        .page-nav a:hover { color: var(--text); background: #262c28; }
+        .page-nav a[aria-current="page"] { color: #1c2414; background: var(--accent); }
+        .page-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .action-button, select { min-height: 38px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--panel); }
+        .action-button { padding: 0 13px; cursor: pointer; font-weight: 650; text-decoration: none; }
+        .action-button.primary { border-color: var(--accent); color: #1c2414; background: var(--accent); }
+        .action-button:hover:not(:disabled) { filter: brightness(1.08); }
+        .action-button:disabled { cursor: wait; opacity: .55; }
+        select { width: 100%; padding: 0 10px; }
+        button:focus-visible, select:focus-visible, input:focus-visible, video:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .status { display: flex; align-items: center; gap: 8px; min-width: 110px; color: var(--muted); font-size: 12px; }
+        .status::before { width: 8px; height: 8px; border-radius: 50%; background: #707a72; content: ""; }
+        .status[data-state="live"]::before { background: var(--accent); box-shadow: 0 0 12px #c7f36b80; }
+        .status[data-state="error"] { color: var(--danger); }
+        .status[data-state="error"]::before { background: var(--danger); }
+        main { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 12px; padding-top: 12px; }
+        .notice { min-height: 18px; color: var(--muted); font-size: 12px; }
+        .camera-grid { display: grid; min-height: 380px; flex: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .camera-card { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+        .camera-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+        .camera-head h2 { margin: 0; font-size: 13px; font-weight: 650; }
+        .camera-state { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+        .camera-card[data-live="true"] .camera-state { color: var(--accent); }
+        .camera-config { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; }
+        .feed { position: relative; display: grid; min-height: 0; flex: 1; place-items: center; overflow: hidden; background: #090b09; }
+        .feed video { display: block; width: 100%; height: 100%; object-fit: contain; }
+        .feed video[hidden] { display: none; }
+        .placeholder { display: grid; gap: 6px; padding: 12px; color: var(--muted); text-align: center; }
+        .placeholder[hidden] { display: none; }
+        .placeholder strong { color: #c3cdc4; font-size: 13px; font-weight: 600; }
+        .placeholder span { font-size: 11px; }
+        .fullscreen-button { position: absolute; right: 8px; bottom: 8px; min-height: 30px; padding: 0 9px; border: 1px solid #ffffff40; border-radius: 3px; color: white; background: #101411c9; cursor: pointer; font-size: 10px; }
+        .feed:fullscreen { width: 100vw; height: 100vh; background: #080a08; }
+        .device-settings { max-height: 150px; overflow: auto; border-top: 1px solid var(--line); }
+        .device-settings summary { padding: 8px 10px; color: var(--muted); cursor: pointer; font-size: 11px; }
+        .device-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; padding: 0 10px 10px; }
+        .device-setting { display: grid; min-width: 0; gap: 5px; color: var(--muted); font-size: 10px; }
+        .device-setting-label { display: flex; justify-content: space-between; gap: 6px; }
+        .device-setting output { color: var(--accent); }
+        .device-setting input[type="range"] { width: 100%; accent-color: var(--accent); }
+        .device-setting input[type="checkbox"] { justify-self: start; accent-color: var(--accent); }
+        .device-setting select, .device-setting input[type="number"] { min-height: 30px; font-size: 11px; }
+        .camera-card footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 0 10px; color: var(--muted); font-size: 10px; }
+        .camera-card footer button { padding: 0; border: 0; color: var(--muted); background: none; cursor: pointer; font-size: 10px; text-decoration: underline; }
+        .tap-panel { border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+        .tap-panel summary { padding: 10px 12px; cursor: pointer; font-size: 12px; font-weight: 650; }
+        .tap-content { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 0 12px 11px; }
+        .tap-option { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+        .tap-option input { accent-color: var(--accent); }
+        .tap-status { flex: 1 1 280px; margin: 0; color: var(--muted); font-size: 10px; }
+        .tap-status[data-state="error"] { color: var(--danger); }
+        @media (max-width: 760px) {
+            .shell { padding: 12px; }
+            header { align-items: flex-start; flex-direction: column; }
+            .page-nav { width: 100%; }
+            .page-nav a { flex: 1; text-align: center; }
+            .header-actions, .toolbar { width: 100%; flex-wrap: wrap; }
+            .header-actions .action-button { flex: 1; text-align: center; }
+            .camera-grid { min-height: 0; grid-template-columns: 1fr; grid-template-rows: auto; }
+            .camera-card { min-height: 360px; }
+        }
+        @media (min-width: 761px) and (max-height: 720px) {
+            .shell { padding: 10px 14px; }
+            header { padding-bottom: 8px; }
+            main { gap: 7px; padding-top: 7px; }
+            .camera-grid { gap: 7px; }
+            .camera-config { padding: 5px 8px; }
+        }
+        @media (min-width: 761px) and (max-width: 1100px) {
+            header { flex-wrap: wrap; }
+            .page-nav { order: 3; flex-basis: 100%; }
+            .header-actions { flex-wrap: wrap; justify-content: flex-end; }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <header>
+            <div>
+                <h1 data-copy="title">Multi-Camera Monitor</h1>
+                <div class="subtitle" data-copy="subtitle">Live local preview for up to four webcams</div>
+            </div>
+            <nav class="page-nav" aria-label="Pages" data-copy-aria="pageNavigation">
+                <a href="/" data-copy="stereoPage">Stereo monitor</a>
+                <a href="/multi-camera" aria-current="page" data-copy="multiCameraPage">Multi-camera monitor</a>
+            </nav>
+            <div class="header-actions">
+                <span class="status" id="captureStatus" data-state="idle" role="status" data-copy="disconnected">Disconnected</span>
+                <button class="action-button" id="refreshCameras" type="button" data-copy="refresh">Refresh cameras</button>
+                <button class="action-button primary" id="toggleCapture" type="button" data-copy="connect">Connect selected</button>
+            </div>
+        </header>
+        <main>
+            <div class="notice" id="notice" role="status" aria-live="polite" data-copy="choose">Select at least two different cameras, then connect. Feeds are captured by this browser and are not uploaded.</div>
+            <section class="camera-grid" id="cameraGrid" aria-label="Multi-camera live feeds"></section>
+            <details class="tap-panel">
+                <summary data-copy="tapTitle">TAP-Net temporal tracking (preparation)</summary>
+                <form class="tap-content" id="tapForm">
+                    <label class="tap-option"><input id="tapEnabled" type="checkbox"><span data-copy="tapEnable">Enable TAP-Net tracking configuration</span></label>
+                    <span id="tapCameraTargets"></span>
+                    <label class="tap-option"><input id="tapComposite" type="checkbox"><span data-copy="composite">Composite output</span></label>
+                    <p class="tap-status" id="tapStatus" role="status" aria-live="polite" data-copy="tapUnavailable">Settings are preparatory only; TAP-Net inference is not installed.</p>
+                    <button class="action-button" id="saveTapSettings" type="submit" data-copy="saveTap">Save tracking targets</button>
+                </form>
+            </details>
+        </main>
+    </div>
+    <script>
+        const copy = {
+            en: {
+                title: 'Multi-Camera Monitor', subtitle: 'Live local preview for up to four webcams',
+                pageNavigation: 'Pages', stereoPage: 'Stereo monitor', multiCameraPage: 'Multi-camera monitor',
+                disconnected: 'Disconnected', connected: 'Connected', refresh: 'Refresh cameras',
+                connect: 'Connect selected', disconnect: 'Disconnect',
+                choose: 'Select at least two different cameras, then connect. Feeds are captured by this browser and are not uploaded.',
+                noCameras: 'No cameras found. Connect a webcam and refresh the list.',
+                camera: 'Camera {slot}', input: 'INPUT {slot}', notConnected: 'Not connected',
+                awaiting: 'Awaiting camera', connectHint: 'Choose a device above to include this input.',
+                chooseDevice: 'Choose a camera…', cameraNumber: 'Camera {index}', noHardware: 'No adjustable controls are exposed by this camera.',
+                settings: 'Camera settings', reset: 'Reset device controls', resolution: 'Stream: {width} × {height}',
+                unsupported: 'Camera controls are not available.', hardwareError: 'Could not read camera controls: {message}',
+                applied: 'Camera setting applied.', applyError: 'Could not apply this setting: {message}',
+                cameraError: 'Could not connect camera {slot}: {message}', duplicate: 'Choose a different device for each camera input.',
+                needTwo: 'Select at least two cameras to start the multi-camera monitor.',
+                connectedCount: '{count} camera feeds connected.', permissionError: 'Camera access failed: {message}',
+                tapTitle: 'TAP-Net temporal tracking (preparation)', tapEnable: 'Enable TAP-Net tracking configuration',
+                composite: 'Composite output', saveTap: 'Save tracking targets',
+                tapUnavailable: 'Settings are preparatory only; TAP-Net inference is not installed.',
+                tapSaved: 'Tracking targets saved. TAP-Net inference is not installed or running.',
+                tapLoadError: 'Could not load TAP-Net tracking settings: {message}',
+                tapSaveError: 'Could not save TAP-Net tracking settings: {message}',
+                tapCamera: 'Track camera {slot}'
+            },
+            hu: {
+                title: 'Többkamerás monitor', subtitle: 'Élő helyi előnézet legfeljebb négy webkamerához',
+                pageNavigation: 'Oldalak', stereoPage: 'Sztereó monitor', multiCameraPage: 'Többkamerás monitor',
+                disconnected: 'Leválasztva', connected: 'Csatlakoztatva', refresh: 'Kamerák frissítése',
+                connect: 'Kijelöltek csatlakoztatása', disconnect: 'Leválasztás',
+                choose: 'Válassz legalább két különböző kamerát, majd csatlakozz. A böngésző kezeli a képeket, feltöltés nem történik.',
+                noCameras: 'Nem található kamera. Csatlakoztass egyet, majd frissítsd a listát.',
+                camera: '{slot}. kamera', input: 'BEMENET {slot}', notConnected: 'Nincs csatlakoztatva',
+                awaiting: 'Várakozás a kamerára', connectHint: 'Válassz eszközt fent a bemenet használatához.',
+                chooseDevice: 'Válassz kamerát…', cameraNumber: '{index}. kamera', noHardware: 'A kamera nem tesz elérhetővé módosítható vezérlőket.',
+                settings: 'Kamerabeállítások', reset: 'Eszközvezérlők visszaállítása', resolution: 'Kép: {width} × {height}',
+                unsupported: 'A kameravezérlők nem érhetők el.', hardwareError: 'Nem olvashatók a kameravezérlők: {message}',
+                applied: 'Kamerabeállítás alkalmazva.', applyError: 'A beállítás nem alkalmazható: {message}',
+                cameraError: 'A(z) {slot}. kamera nem csatlakoztatható: {message}', duplicate: 'Minden bemenethez másik eszközt válassz.',
+                needTwo: 'A többkamerás monitor indításához válassz legalább két kamerát.',
+                connectedCount: '{count} kamerakép csatlakoztatva.', permissionError: 'A kamerához való hozzáférés nem sikerült: {message}',
+                tapTitle: 'TAP-Net időbeli követés (előkészítés)', tapEnable: 'TAP-Net követési beállítás engedélyezése',
+                composite: 'Kompozit kimenet', saveTap: 'Követési célok mentése',
+                tapUnavailable: 'A beállítások csak előkészítő jellegűek; a TAP-Net követés nincs telepítve.',
+                tapSaved: 'A követési célok mentve. A TAP-Net követés nincs telepítve vagy elindítva.',
+                tapLoadError: 'A TAP-Net beállításai nem tölthetők be: {message}',
+                tapSaveError: 'A TAP-Net beállításai nem menthetők: {message}',
+                tapCamera: 'A(z) {slot}. kamera követése'
+            }
+        };
+        const language = localStorage.getItem('stereoLabLanguage') === 'hu' ? 'hu' : 'en';
+        const tr = (key, values = {}) => Object.entries(values).reduce(
+            (text, [name, value]) => text.replaceAll(`{${name}}`, value),
+            copy[language][key] || key
+        );
+        const grid = document.getElementById('cameraGrid');
+        const status = document.getElementById('captureStatus');
+        const notice = document.getElementById('notice');
+        const refreshButton = document.getElementById('refreshCameras');
+        const toggleButton = document.getElementById('toggleCapture');
+        const slots = [];
+        let availableCameras = [];
+        let activeStreams = [];
+        let capturing = false;
+
+        document.documentElement.lang = language;
+        document.querySelectorAll('[data-copy]').forEach(element => {
+            element.textContent = tr(element.dataset.copy);
+        });
+        document.querySelectorAll('[data-copy-aria]').forEach(element => {
+            element.setAttribute('aria-label', tr(element.dataset.copyAria));
+        });
+
+        function setNotice(text, state = '') {
+            notice.textContent = text;
+            status.dataset.state = state || (capturing ? 'live' : 'idle');
+            status.textContent = capturing
+                ? tr('connected')
+                : state === 'error' ? text : tr('disconnected');
+        }
+
+        function createSlot(slot) {
+            const card = document.createElement('article');
+            card.className = 'camera-card';
+            card.dataset.slot = slot;
+            card.innerHTML = `
+                <div class="camera-head"><h2></h2><span class="camera-state"></span></div>
+                <div class="camera-config"><select aria-label="${tr('camera', { slot })}"></select><span class="camera-input-label"></span></div>
+                <div class="feed">
+                    <video autoplay muted playsinline hidden></video>
+                    <div class="placeholder"><strong></strong><span></span></div>
+                    <button class="fullscreen-button" type="button" hidden>Full screen</button>
+                </div>
+                <details class="device-settings">
+                    <summary>${tr('settings')}</summary>
+                    <div class="device-controls"></div>
+                </details>
+                <footer><span class="resolution"></span><button type="button" class="reset-controls">${tr('reset')}</button></footer>`;
+            const item = {
+                slot, card, select: card.querySelector('select'), video: card.querySelector('video'),
+                placeholder: card.querySelector('.placeholder'), cameraState: card.querySelector('.camera-state'),
+                controls: card.querySelector('.device-controls'), resolution: card.querySelector('.resolution'),
+                fullscreen: card.querySelector('.fullscreen-button')
+            };
+            card.querySelector('h2').textContent = tr('camera', { slot });
+            card.querySelector('.camera-input-label').textContent = tr('input', { slot: String(slot).padStart(2, '0') });
+            card.querySelector('.placeholder strong').textContent = tr('awaiting');
+            card.querySelector('.placeholder span').textContent = tr('connectHint');
+            item.fullscreen.textContent = language === 'hu' ? 'Teljes képernyő' : 'Full screen';
+            item.select.addEventListener('change', () => renderHardwareControls(item));
+            item.fullscreen.addEventListener('click', async () => {
+                try {
+                    await item.video.parentElement.requestFullscreen();
+                } catch (error) {
+                    setNotice(error.message, 'error');
+                }
+            });
+            item.video.addEventListener('dblclick', () => item.fullscreen.click());
+            card.querySelector('.reset-controls').addEventListener('click', () => resetHardwareControls(item));
+            grid.append(card);
+            slots.push(item);
+        }
+
+        function populateCameraLists() {
+            slots.forEach((item, slotIndex) => {
+                const selectedId = item.select.value;
+                item.select.replaceChildren(new Option(tr('chooseDevice'), ''));
+                availableCameras.forEach((camera, cameraIndex) => {
+                    const option = new Option(
+                        camera.label || tr('cameraNumber', { index: cameraIndex + 1 }),
+                        camera.deviceId
+                    );
+                    item.select.append(option);
+                });
+                if (availableCameras.some(camera => camera.deviceId === selectedId)) {
+                    item.select.value = selectedId;
+                } else if (!selectedId && availableCameras[slotIndex]) {
+                    item.select.value = availableCameras[slotIndex].deviceId;
+                }
+                item.select.disabled = capturing;
+            });
+        }
+
+        async function refreshCameras() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('Camera capture requires localhost or HTTPS.');
+            }
+            refreshButton.disabled = true;
+            try {
+                const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                permissionStream.getTracks().forEach(track => track.stop());
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                availableCameras = devices.filter(device => device.kind === 'videoinput');
+                populateCameraLists();
+                setNotice(availableCameras.length
+                    ? tr('choose')
+                    : tr('noCameras'));
+            } finally {
+                refreshButton.disabled = capturing;
+            }
+        }
+
+        function describeCapability(name) {
+            return name.replace(/([A-Z])/g, ' $1').replace(/^./, letter => letter.toUpperCase());
+        }
+
+        async function applyConstraint(item, name, value) {
+            const track = item.video.srcObject?.getVideoTracks()[0];
+            if (!track) return;
+            try {
+                await track.applyConstraints({ [name]: { exact: value } });
+                renderHardwareControls(item);
+                item.cameraState.textContent = tr('applied');
+            } catch (error) {
+                renderHardwareControls(item);
+                item.cameraState.textContent = tr('applyError', { message: error.message });
+            }
+        }
+
+        function renderHardwareControls(item) {
+            item.controls.replaceChildren();
+            const track = item.video.srcObject?.getVideoTracks()[0];
+            if (!track) {
+                item.resolution.textContent = '';
+                return;
+            }
+            let capabilities;
+            try {
+                capabilities = track.getCapabilities();
+            } catch (error) {
+                item.cameraState.textContent = tr('hardwareError', { message: error.message });
+                return;
+            }
+            const settings = track.getSettings();
+            let count = 0;
+            Object.entries(capabilities).forEach(([name, capability]) => {
+                if (name === 'deviceId' || name === 'groupId') return;
+                const field = document.createElement('label');
+                field.className = 'device-setting';
+                const label = document.createElement('span');
+                label.className = 'device-setting-label';
+                label.textContent = describeCapability(name);
+                field.append(label);
+                const current = settings[name];
+                if (Array.isArray(capability)) {
+                    const select = document.createElement('select');
+                    capability.forEach(value => select.add(new Option(String(value), String(value))));
+                    select.value = String(current ?? capability[0]);
+                    select.addEventListener('change', () => applyConstraint(item, name, select.value));
+                    field.append(select);
+                } else if (typeof capability === 'boolean') {
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = Boolean(current);
+                    checkbox.addEventListener('change', () => applyConstraint(item, name, checkbox.checked));
+                    field.append(checkbox);
+                } else if (capability && Number.isFinite(capability.min) && Number.isFinite(capability.max)) {
+                    const numeric = name === 'width' || name === 'height';
+                    const input = document.createElement('input');
+                    input.type = numeric ? 'number' : 'range';
+                    input.min = capability.min;
+                    input.max = capability.max;
+                    input.step = capability.step || (Number.isInteger(capability.min) && Number.isInteger(capability.max) ? 1 : 'any');
+                    input.value = current ?? capability.min;
+                    const output = document.createElement('output');
+                    output.value = String(current ?? capability.min);
+                    label.append(output);
+                    input.addEventListener('input', () => { output.value = input.value; });
+                    input.addEventListener('change', () => applyConstraint(item, name, Number(input.value)));
+                    field.append(input);
+                } else {
+                    return;
+                }
+                item.controls.append(field);
+                count += 1;
+            });
+            item.resolution.textContent = item.video.videoWidth && item.video.videoHeight
+                ? tr('resolution', { width: item.video.videoWidth, height: item.video.videoHeight })
+                : '';
+            item.cameraState.textContent = count ? tr('connected') : tr('unsupported');
+            if (!count) {
+                const message = document.createElement('p');
+                message.className = 'tap-status';
+                message.textContent = tr('noHardware');
+                item.controls.append(message);
+            }
+        }
+
+        async function resetHardwareControls(item) {
+            const track = item.video.srcObject?.getVideoTracks()[0];
+            if (!track) return;
+            try {
+                await track.applyConstraints({});
+                renderHardwareControls(item);
+            } catch (error) {
+                item.cameraState.textContent = tr('applyError', { message: error.message });
+            }
+        }
+
+        async function connectCameras() {
+            const selected = slots.filter(item => item.select.value);
+            if (selected.length < 2) throw new Error(tr('needTwo'));
+            const deviceIds = selected.map(item => item.select.value);
+            if (new Set(deviceIds).size !== deviceIds.length) throw new Error(tr('duplicate'));
+            activeStreams = [];
+            try {
+                for (const item of selected) {
+                    const camera = availableCameras.find(device => device.deviceId === item.select.value);
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({
+                            video: {
+                                deviceId: { exact: item.select.value },
+                                width: { ideal: 640 },
+                                height: { ideal: 480 }
+                            },
+                            audio: false
+                        });
+                        activeStreams.push({ item, stream });
+                        item.video.srcObject = stream;
+                        await item.video.play();
+                        if (item.video.readyState < 2) {
+                            await new Promise(resolve => item.video.addEventListener('loadeddata', resolve, { once: true }));
+                        }
+                        item.card.dataset.live = 'true';
+                        item.placeholder.hidden = true;
+                        item.video.hidden = false;
+                        item.fullscreen.hidden = false;
+                        item.select.disabled = true;
+                        item.cameraState.textContent = camera?.label || tr('connected');
+                        renderHardwareControls(item);
+                    } catch (error) {
+                        throw new Error(tr('cameraError', { slot: item.slot, message: error.message }));
+                    }
+                }
+                capturing = true;
+                slots.filter(item => !item.select.value).forEach(item => {
+                    item.select.disabled = true;
+                    item.cameraState.textContent = tr('notConnected');
+                });
+                refreshButton.disabled = true;
+                toggleButton.textContent = tr('disconnect');
+                toggleButton.disabled = false;
+                setNotice(tr('connectedCount', { count: selected.length }));
+            } catch (error) {
+                stopCameras();
+                throw error;
+            }
+        }
+
+        function stopCameras() {
+            capturing = false;
+            activeStreams.forEach(({ item, stream }) => {
+                stream.getTracks().forEach(track => track.stop());
+                item.video.srcObject = null;
+                item.video.hidden = true;
+                item.fullscreen.hidden = true;
+                item.placeholder.hidden = false;
+                item.card.removeAttribute('data-live');
+                item.cameraState.textContent = tr('notConnected');
+                item.controls.replaceChildren();
+                item.resolution.textContent = '';
+            });
+            activeStreams = [];
+            slots.forEach(item => { item.select.disabled = false; });
+            refreshButton.disabled = false;
+            toggleButton.textContent = tr('connect');
+            status.dataset.state = 'idle';
+            status.textContent = tr('disconnected');
+        }
+
+        function renderTapTargets(settings) {
+            document.getElementById('tapEnabled').checked = settings.enabled;
+            document.getElementById('tapComposite').checked = settings.composite;
+            const targetContainer = document.getElementById('tapCameraTargets');
+            targetContainer.replaceChildren();
+            for (let slot = 1; slot <= 4; slot += 1) {
+                const label = document.createElement('label');
+                label.className = 'tap-option';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.name = 'cameraSlots';
+                input.value = String(slot);
+                input.checked = settings.cameraSlots.includes(slot);
+                const text = document.createElement('span');
+                text.textContent = tr('tapCamera', { slot });
+                label.append(input, text);
+                targetContainer.append(label);
+            }
+        }
+
+        async function loadTapSettings() {
+            const response = await fetch('/api/tap-settings');
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Request failed.');
+            renderTapTargets(result);
+        }
+
+        for (let slot = 1; slot <= 4; slot += 1) createSlot(slot);
+        refreshButton.addEventListener('click', async () => {
+            try {
+                await refreshCameras();
+            } catch (error) {
+                setNotice(tr('permissionError', { message: error.message }), 'error');
+            }
+        });
+        toggleButton.addEventListener('click', async () => {
+            if (capturing) {
+                stopCameras();
+                setNotice(tr('choose'));
+                return;
+            }
+            toggleButton.disabled = true;
+            try {
+                await connectCameras();
+            } catch (error) {
+                setNotice(error.message, 'error');
+            } finally {
+                toggleButton.disabled = false;
+            }
+        });
+        document.getElementById('tapForm').addEventListener('submit', async event => {
+            event.preventDefault();
+            const button = document.getElementById('saveTapSettings');
+            const tapStatus = document.getElementById('tapStatus');
+            button.disabled = true;
+            tapStatus.dataset.state = '';
+            try {
+                const response = await fetch('/api/tap-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        enabled: document.getElementById('tapEnabled').checked,
+                        cameraSlots: [...document.querySelectorAll('input[name="cameraSlots"]:checked')]
+                            .map(input => Number(input.value)),
+                        composite: document.getElementById('tapComposite').checked
+                    })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Request failed.');
+                renderTapTargets(result);
+                tapStatus.textContent = tr('tapSaved');
+            } catch (error) {
+                tapStatus.textContent = tr('tapSaveError', { message: error.message });
+                tapStatus.dataset.state = 'error';
+            } finally {
+                button.disabled = false;
+            }
+        });
+        window.addEventListener('pagehide', stopCameras);
+        navigator.mediaDevices?.addEventListener('devicechange', () => {
+            if (!capturing) refreshCameras().catch(error => setNotice(error.message, 'error'));
+        });
+        loadTapSettings().catch(error => {
+            const tapStatus = document.getElementById('tapStatus');
+            tapStatus.textContent = tr('tapLoadError', { message: error.message });
+            tapStatus.dataset.state = 'error';
+        });
+        refreshCameras().catch(error => {
+            setNotice(tr('permissionError', { message: error.message }), 'error');
+            status.dataset.state = 'error';
+        });
+    </script>
+</body>
+</html>
