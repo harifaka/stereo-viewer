@@ -3,13 +3,8 @@
     {
       "name": "Default",
       "files": [
-        "ROADMAP.md",
-        ".vscode/changelists.json",
-        "README.md",
-        "app.py",
-        "templates/index.html",
-        "templates/multi_camera.html",
-        "tests/test_tap_settings.py"
+        "docker-compose.yml",
+        ".vscode/changelists.json"
       ]
     }
   ],
