@@ -22,9 +22,13 @@ The interface is available in English and Hungarian. Use the **EN / HU** selecto
 
 Camera source is a browser-local preference, so remote users can select **Browser cameras** to use webcams attached to their own computers while local users select **Docker / Linux devices** to use cameras attached to the server. A browser's source choice is remembered only in that browser; camera slot labels, indexes, and Active checkboxes are shared by the server.
 
-In browser mode, indexes 0-3 refer to the order of video devices reported to that user's browser. Grant webcam permission and use `localhost` or HTTPS; remote users need HTTPS for browser webcam access. The browser's device IDs are not written to server configuration.
+The multi-camera monitor uses 1 to 16 slots. Device indexes are unique integers from 0 to 31. A fresh install starts with four slots and the first two active. Existing four-slot `cameras.json` files still load.
 
-In Docker/Linux mode, indexes 0-3 open `/dev/video0` through `/dev/video3` inside the container. Every Active camera is read concurrently by its own server capture worker and its MJPEG preview is available to clients. This exposes server-attached cameras to every user who can access the app; use appropriate network access controls when deploying it remotely. The included Compose file maps those four Linux paths and persists the shared camera mapping at `./camera-config/cameras.json`.
+In browser mode, an index is the position in the video-device list reported to that user's browser. Grant webcam permission and use `localhost` or HTTPS; remote users need HTTPS for browser webcam access. The browser's device IDs are not written to server configuration. Browser index choices are stored in that browser and follow the current slot count.
+
+In Docker/Linux mode, index N opens `/dev/videoN` inside the container. The included Compose file maps `/dev/video0` through `/dev/video3` and persists the shared camera mapping at `./camera-config/cameras.json`. Every Active camera is read concurrently by its own server capture worker and its MJPEG preview is available to clients. This exposes server-attached cameras to every user who can access the app; use appropriate network access controls when deploying it remotely.
+
+To use a Linux camera above index 3, add a matching Compose `devices` entry, for example `"/dev/video4:/dev/video4"`. Add an entry only when that device node exists; mapping a missing node prevents Compose from starting.
 
 On Windows 11 with WSL2, Docker/Linux mode works only when the webcams have first been made available as `/dev/video*` devices to the Linux environment used by Docker. If Windows does not expose them there, use Browser cameras; browser capture does not require USB passthrough.
 
@@ -32,9 +36,13 @@ Open **Detailed settings** to tune StereoSGBM when the depth map is too noisy, m
 
 ### Multi-Camera Monitor
 
-Open **Multi-camera monitor** from the shared **Pages** panel on either page for a viewport-filling live preview of up to four cameras. Use the gear button to select the capture source and map each camera slot to an index, custom label, and Active state. Press **Connect active cameras** to start enabled feeds or **Disconnect cameras** to release them. The shared settings are atomically saved to `config/cameras.json` in the container and persisted to the host `./camera-config` folder by Compose.
+Open **Multi-camera monitor** from the shared **Pages** panel on either page for a live preview of the configured cameras. One camera fills the page; additional cameras wrap across the grid. Use the gear button to select the capture source, add or remove slots (1 to 16), and map each slot to an index, custom label, and Active state. Press **Connect active cameras** to start enabled feeds or **Disconnect cameras** to release them. The shared settings are atomically saved to `config/cameras.json` in the container and persisted to the host `./camera-config` folder by Compose.
 
-Browser-mode feeds remain local to the user's browser. Docker-mode feeds are captured on the server and shared with clients; each client holds a lease so disconnecting one client does not stop other Docker-mode viewers. The monitor does not yet run multi-view stereo, thermal fusion, or network streams.
+Choose a processing mode under the grid: **Preview**, **Multi-view stereo**, **Thermal fusion**, **Thermal stereo**, or **Visual SLAM**. Preview only shows the live grid. The other modes add a server-rendered output. Browser mode uploads frames from this computer while a processing mode is active. Docker mode processes the frames already captured on the server. Multi-view stereo and thermal stereo need two camera frames and show an error when fewer are available. Preview and visual SLAM still run with one camera. Thermal fusion needs one RGB camera and at least one other camera marked as thermal.
+
+Multi-view stereo matches ORB or SIFT features against a reference camera, draws inlier matches and epipolar lines, and triangulates a sparse 3D reference. It is not a dense mesh. Thermal fusion estimates a homography and overlays a translucent thermal colormap on the RGB view, with an optional picture-in-picture. Thermal stereo applies CLAHE and then StereoSGBM; the disparity colors follow the stereo-page palette. Metric distance still requires checkerboard calibration on the stereo page. Visual SLAM draws optical-flow vectors and a relative path from the selected odometry camera. Processing settings, flow state, and calibration are held in memory and reset when the app restarts.
+
+**ChArUco global calibration** prints or displays a board from **Open board**. Show it to at least two cameras, capture four or more varied views, and choose **Calibrate cameras**. The reference camera becomes the origin of one coordinate system. OpenCV ArUco support comes from `opencv-contrib-python`. Poisson surface reconstruction and network camera streams are not implemented.
 
 The **TAP-Net temporal tracking** section saves preparatory target selections for individual camera inputs and the composite output. The TAP-Net model/runtime is not integrated yet, so saving these settings does not run tracking. Configuration is held by the running Flask process and resets when it restarts.
 

@@ -46,7 +46,7 @@
         .status[data-state="error"]::before { background: var(--danger); }
         main { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 12px; padding-top: 12px; }
         .notice { min-height: 18px; color: var(--muted); font-size: 12px; }
-        .camera-grid { display: grid; min-height: 380px; flex: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .camera-grid { display: grid; min-height: 380px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); grid-auto-rows: minmax(220px, 1fr); gap: 12px; }
         .camera-card { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
         .camera-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
         .camera-head h2 { margin: 0; font-size: 13px; font-weight: 650; }
@@ -59,7 +59,24 @@
         .placeholder[hidden] { display: none; }
         .placeholder strong { color: #c3cdc4; font-size: 13px; font-weight: 600; }
         .placeholder span { font-size: 11px; }
-        .tap-panel { border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+        .processing-panel, .charuco-panel, .tap-panel { border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+        .processing-panel { display: grid; gap: 12px; padding: 12px; }
+        .processing-controls, .charuco-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; }
+        .processing-controls label, .charuco-controls label, .tap-option { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+        .processing-controls select, .processing-controls input, .charuco-controls input, .charuco-controls select { min-height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
+        .mode-options { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+        .mode-options[hidden] { display: none; }
+        .thermal-slots { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+        .check-option { display: inline-flex; align-items: center; gap: 6px; }
+        .processing-output { display: grid; gap: 8px; }
+        .processing-output[hidden] { display: none; }
+        a.action-button { display: inline-flex; align-items: center; text-decoration: none; }
+        .processing-output img { display: block; width: 100%; max-height: 420px; object-fit: contain; background: #090b09; border-radius: 4px; }
+        .processing-output img[hidden] { display: none; }
+        .charuco-panel { padding: 0 12px 12px; }
+        .charuco-panel summary { padding: 10px 0; cursor: pointer; font-size: 12px; font-weight: 650; }
+        .charuco-note { flex: 1 1 240px; margin: 0; color: var(--muted); font-size: 11px; }
+        .charuco-note a { color: var(--accent); }
         .tap-panel summary { padding: 10px 12px; cursor: pointer; font-size: 12px; font-weight: 650; }
         .tap-content { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 0 12px 11px; }
         .tap-option { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
@@ -87,6 +104,9 @@
         .camera-settings-active { width: 62px; text-align: center !important; }
         .camera-settings-message { min-height: 18px; margin: 12px 0 0; color: var(--muted); font-size: 11px; }
         .camera-settings-message[data-state="error"] { color: var(--danger); }
+        .camera-settings-toolbar { display: flex; margin-top: 12px; }
+        .camera-settings-add, .camera-settings-remove { min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; }
+        .camera-settings-remove:disabled { cursor: not-allowed; opacity: .4; }
         .camera-settings-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 10px; }
         .camera-settings-actions button { min-height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; }
         .camera-settings-actions .camera-settings-primary { border-color: var(--accent); color: #1c2414; background: var(--accent); font-weight: 700; }
@@ -104,7 +124,7 @@
         <header>
             <div>
                 <h1 data-copy="title">Multi-Camera Monitor</h1>
-                <div class="subtitle" data-copy="subtitle">Concurrent preview for up to four webcams</div>
+                <div class="subtitle" data-copy="subtitle">Concurrent preview for 1 to 16 cameras</div>
             </div>
             <nav class="page-nav" aria-label="Pages" data-copy-aria="pageNavigation">
                 <a href="/" data-copy="stereoPage">Stereo monitor</a>
@@ -130,6 +150,80 @@
         <main>
             <div class="notice" id="notice" role="status" aria-live="polite" data-copy="choose">Configure camera labels and active devices, then connect. Each enabled Linux camera is captured independently by the server.</div>
             <section class="camera-grid" id="cameraGrid" aria-label="Multi-camera live feeds"></section>
+            <section class="processing-panel" aria-label="Processing">
+                <div class="processing-controls">
+                    <label><span data-copy="processingMode">Processing mode</span>
+                        <select id="processingMode">
+                            <option value="preview" data-copy="modePreview">Preview</option>
+                            <option value="mvs" data-copy="modeMvs">Multi-view stereo</option>
+                            <option value="thermal" data-copy="modeThermal">Thermal fusion</option>
+                            <option value="thermal-stereo" data-copy="modeThermalStereo">Thermal stereo</option>
+                            <option value="slam" data-copy="modeSlam">Visual SLAM</option>
+                        </select>
+                    </label>
+                    <div class="mode-options" data-mode-panel="mvs">
+                        <label><span data-copy="referenceCamera">Reference camera</span>
+                            <select id="mvsReference" data-slot-select></select>
+                        </label>
+                        <label><span data-copy="detector">Feature detector</span>
+                            <select id="mvsDetector">
+                                <option value="ORB">ORB</option>
+                                <option value="SIFT">SIFT</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="mode-options" data-mode-panel="thermal" hidden>
+                        <label><span data-copy="rgbCamera">RGB camera</span>
+                            <select id="thermalRgb" data-slot-select></select>
+                        </label>
+                        <div>
+                            <span data-copy="thermalCameras">Thermal cameras</span>
+                            <div class="thermal-slots" id="thermalSlots"></div>
+                        </div>
+                        <label><span data-copy="overlayOpacity">Overlay opacity</span>
+                            <input id="overlayOpacity" type="number" min="0.15" max="0.85" step="0.05" value="0.55">
+                        </label>
+                        <label class="check-option"><input id="pictureInPicture" type="checkbox" checked><span data-copy="pictureInPicture">Picture in picture</span></label>
+                    </div>
+                    <div class="mode-options" data-mode-panel="thermal-stereo" hidden>
+                        <label><span data-copy="thermalLeft">Thermal left</span>
+                            <select id="thermalLeft" data-slot-select></select>
+                        </label>
+                        <label><span data-copy="thermalRight">Thermal right</span>
+                            <select id="thermalRight" data-slot-select></select>
+                        </label>
+                        <label><span data-copy="claheClip">CLAHE clip</span>
+                            <input id="claheClip" type="number" min="1" max="8" step="0.5" value="3">
+                        </label>
+                    </div>
+                    <div class="mode-options" data-mode-panel="slam" hidden>
+                        <label><span data-copy="odometryCamera">Odometry camera</span>
+                            <select id="slamReference" data-slot-select></select>
+                        </label>
+                    </div>
+                    <button class="action-button" id="saveProcessingSettings" type="button" data-copy="saveProcessing">Save processing settings</button>
+                </div>
+                <div class="processing-output">
+                    <img id="processingOutput" alt="Multi-camera processing output" hidden>
+                </div>
+                <p class="notice" id="processingStatus" role="status" aria-live="polite"></p>
+            </section>
+            <details class="charuco-panel">
+                <summary data-copy="charucoTitle">ChArUco global calibration</summary>
+                <div class="charuco-controls">
+                    <label><span data-copy="squaresX">Squares X</span><input id="charucoSquaresX" type="number" min="3" max="8" step="1" value="5"></label>
+                    <label><span data-copy="squaresY">Squares Y</span><input id="charucoSquaresY" type="number" min="3" max="8" step="1" value="7"></label>
+                    <label><span data-copy="squareSize">Square size (mm)</span><input id="charucoSquareSize" type="number" min="5" max="200" step="1" value="30"></label>
+                    <label><span data-copy="markerSize">Marker size (mm)</span><input id="charucoMarkerSize" type="number" min="4" max="200" step="1" value="22"></label>
+                    <label><span data-copy="charucoReference">Reference camera</span><select id="charucoReference" data-slot-select></select></label>
+                    <button class="action-button" id="saveCharucoBoard" type="button" data-copy="saveBoard">Save board</button>
+                    <a class="action-button" id="openCharucoBoard" href="/charuco-board.png" target="_blank" rel="noopener" data-copy="openBoard">Open board</a>
+                    <button class="action-button" id="captureCharuco" type="button" data-copy="captureBoard">Capture board view</button>
+                    <button class="action-button primary" id="calibrateCharuco" type="button" data-copy="calibrateCameras">Calibrate cameras</button>
+                    <button class="action-button" id="resetCharuco" type="button" data-copy="resetCalibration">Reset calibration</button>
+                    <p class="charuco-note" id="charucoStatus" role="status"></p>
+                </div>
+            </details>
             <details class="tap-panel">
                 <summary data-copy="tapTitle">TAP-Net temporal tracking (preparation)</summary>
                 <form class="tap-content" id="tapForm">
@@ -146,7 +240,21 @@
     <script>
         const copy = {
             en: {
-                title: 'Multi-Camera Monitor', subtitle: 'Concurrent preview for up to four webcams',
+                title: 'Multi-Camera Monitor', subtitle: 'Concurrent preview for 1 to 16 cameras',
+                processingMode: 'Processing mode', modePreview: 'Preview', modeMvs: 'Multi-view stereo',
+                modeThermal: 'Thermal fusion', modeThermalStereo: 'Thermal stereo', modeSlam: 'Visual SLAM',
+                referenceCamera: 'Reference camera', detector: 'Feature detector', rgbCamera: 'RGB camera',
+                thermalCameras: 'Thermal cameras', overlayOpacity: 'Overlay opacity', pictureInPicture: 'Picture in picture',
+                thermalLeft: 'Thermal left', thermalRight: 'Thermal right', claheClip: 'CLAHE clip',
+                odometryCamera: 'Odometry camera', saveProcessing: 'Save processing settings',
+                processingSaved: 'Processing settings saved.',
+                processingSaveError: 'Could not save processing settings: {message}',
+                processingWaiting: 'Connect the cameras to run this processing mode.',
+                charucoTitle: 'ChArUco global calibration', squaresX: 'Squares X', squaresY: 'Squares Y',
+                squareSize: 'Square size (mm)', markerSize: 'Marker size (mm)', charucoReference: 'Reference camera',
+                saveBoard: 'Save board', openBoard: 'Open board', captureBoard: 'Capture board view',
+                calibrateCameras: 'Calibrate cameras', resetCalibration: 'Reset calibration',
+                charucoNeedFrames: 'Connect at least two cameras, show them the board, then capture.',
                 pageNavigation: 'Pages', stereoPage: 'Stereo monitor', multiCameraPage: 'Multi-camera monitor',
                 disconnected: 'Disconnected', connected: 'Connected', connect: 'Connect active cameras',
                 disconnect: 'Disconnect cameras', choose: 'Configure camera labels and active devices, then connect. Browser mode uses webcams on this computer; Docker mode captures server devices.',
@@ -162,7 +270,21 @@
                 tapCamera: 'Track camera {slot}'
             },
             hu: {
-                title: 'Többkamerás monitor', subtitle: 'Párhuzamos előnézet legfeljebb négy webkamerához',
+                title: 'Többkamerás monitor', subtitle: 'Párhuzamos előnézet 1–16 kamerához',
+                processingMode: 'Feldolgozási mód', modePreview: 'Előnézet', modeMvs: 'Többnézetű sztereó',
+                modeThermal: 'Hőképes összeillesztés', modeThermalStereo: 'Hőképes sztereó', modeSlam: 'Vizuális SLAM',
+                referenceCamera: 'Referenciakamera', detector: 'Jellemződetektor', rgbCamera: 'RGB kamera',
+                thermalCameras: 'Hőkamerák', overlayOpacity: 'Átfedés átlátszatlansága', pictureInPicture: 'Kép a képben',
+                thermalLeft: 'Bal hőkamera', thermalRight: 'Jobb hőkamera', claheClip: 'CLAHE vágás',
+                odometryCamera: 'Odometriakamera', saveProcessing: 'Feldolgozási beállítások mentése',
+                processingSaved: 'A feldolgozási beállítások mentve.',
+                processingSaveError: 'A feldolgozási beállítások nem menthetők: {message}',
+                processingWaiting: 'Csatlakoztasd a kamerákat a feldolgozási mód indításához.',
+                charucoTitle: 'ChArUco globális kalibráció', squaresX: 'Négyzetek X', squaresY: 'Négyzetek Y',
+                squareSize: 'Négyzetméret (mm)', markerSize: 'Jelölőméret (mm)', charucoReference: 'Referenciakamera',
+                saveBoard: 'Tábla mentése', openBoard: 'Tábla megnyitása', captureBoard: 'Táblanézet rögzítése',
+                calibrateCameras: 'Kamerák kalibrálása', resetCalibration: 'Kalibráció törlése',
+                charucoNeedFrames: 'Csatlakoztass legalább két kamerát, mutasd nekik a táblát, majd rögzíts nézetet.',
                 pageNavigation: 'Oldalak', stereoPage: 'Sztereó monitor', multiCameraPage: 'Többkamerás monitor',
                 disconnected: 'Leválasztva', connected: 'Csatlakoztatva', connect: 'Aktív kamerák csatlakoztatása',
                 disconnect: 'Kamerák leválasztása', choose: 'Állítsd be a kameracímkéket és az aktív eszközöket, majd csatlakozz. Böngésző módban az ezen a gépen lévő, Docker módban a szerver kameráit használja.',
@@ -188,7 +310,10 @@
         const notice = document.getElementById('notice');
         const toggleButton = document.getElementById('toggleCapture');
         const cameraCards = new Map();
+        let configuredCameras = [];
         let capturing = false;
+        let uploadTimer = null;
+        let processingTimer = null;
         let pollTimer = null;
         let captureSource = localStorage.getItem('stereoCameraSource') === 'docker' ? 'docker' : 'browser';
         let runningSource = null;
@@ -199,21 +324,21 @@
             sessionStorage.setItem('stereoCameraClientId', cameraClientId);
         }
 
-        function getBrowserDeviceIndices() {
+        function getBrowserDeviceIndices(count) {
             try {
                 const indexes = JSON.parse(localStorage.getItem('stereoBrowserDeviceIndices') || 'null');
                 if (
                     Array.isArray(indexes)
-                    && indexes.length === 4
-                    && indexes.every(index => Number.isInteger(index) && index >= 0 && index < 4)
-                    && new Set(indexes).size === 4
+                    && indexes.length === count
+                    && indexes.every(index => Number.isInteger(index) && index >= 0 && index <= 31)
+                    && new Set(indexes).size === count
                 ) {
                     return indexes;
                 }
             } catch (error) {
                 console.warn('Ignoring invalid browser camera index preferences.', error);
             }
-            return [0, 1, 2, 3];
+            return Array.from({ length: count }, (_, index) => index);
         }
 
         document.documentElement.lang = language;
@@ -269,12 +394,30 @@
                 item.state.textContent = tr('connected');
                 item.placeholder.hidden = true;
             });
+            item.slot = slot;
             cameraCards.set(slot, item);
-            grid.append(card);
+        }
+
+        function syncCameraCards(cameras) {
+            const wanted = new Set(cameras.map(camera => camera.slot));
+            [...cameraCards.entries()].forEach(([slot, item]) => {
+                if (!wanted.has(slot)) {
+                    item.video.srcObject?.getTracks().forEach(track => track.stop());
+                    item.card.remove();
+                    cameraCards.delete(slot);
+                }
+            });
+            cameras.forEach(camera => {
+                if (!cameraCards.has(camera.slot)) createCameraCard(camera.slot);
+                grid.append(cameraCards.get(camera.slot).card);
+            });
         }
 
         function renderCameraSettings(settings) {
             captureSource = settings.captureSource;
+            configuredCameras = settings.cameras;
+            syncCameraCards(settings.cameras);
+            const browserIndexes = settings.browserDeviceIndices || getBrowserDeviceIndices(settings.cameras.length);
             settings.cameras.forEach(camera => {
                 const item = cameraCards.get(camera.slot);
                 item.title.textContent = camera.label;
@@ -282,7 +425,7 @@
                 item.video.setAttribute('aria-label', camera.label);
                 item.active = camera.active;
                 item.deviceIndex = captureSource === 'browser'
-                    ? (settings.browserDeviceIndices || getBrowserDeviceIndices())[camera.slot - 1]
+                    ? browserIndexes[camera.slot - 1]
                     : camera.deviceIndex;
                 item.card.dataset.active = String(camera.active);
                 item.detail.textContent = camera.active
@@ -293,6 +436,7 @@
                 item.state.textContent = camera.active ? tr('disconnected') : tr('inactive');
             });
             toggleButton.textContent = tr(capturing ? 'disconnect' : 'connect');
+            fillSlotSelects();
         }
 
         async function loadCameraSettings() {
@@ -302,7 +446,7 @@
             renderCameraSettings({
                 ...result,
                 captureSource,
-                browserDeviceIndices: getBrowserDeviceIndices()
+                browserDeviceIndices: getBrowserDeviceIndices(result.cameras.length)
             });
         }
 
@@ -395,6 +539,7 @@
                 runningSource = captureSource;
                 toggleButton.textContent = tr('disconnect');
                 setStatus(tr('connected'), 'live');
+                startProcessing();
                 if (runningSource === 'docker') {
                     pollTimer = window.setInterval(() => {
                         updateCameraStatus().catch(error => setStatus(error.message, 'error'));
@@ -413,6 +558,7 @@
 
         async function disconnectCameras() {
             capturing = false;
+            stopProcessing();
             window.clearInterval(pollTimer);
             pollTimer = null;
             cameraCards.forEach(item => {
@@ -446,7 +592,6 @@
             setStatus(tr('choose'));
         }
 
-        for (let slot = 1; slot <= 4; slot += 1) createCameraCard(slot);
         toggleButton.addEventListener('click', () => {
             if (capturing) disconnectCameras();
             else connectCameras();
@@ -454,6 +599,7 @@
         document.addEventListener('camera-settings-saved', async event => {
             if (capturing) await disconnectCameras();
             renderCameraSettings(event.detail);
+            if (lastTapSettings) renderTapTargets(lastTapSettings);
         });
         window.addEventListener('pagehide', () => {
             if (runningSource === 'docker') {
@@ -464,12 +610,16 @@
             }
         });
 
+        let lastTapSettings = null;
+
         function renderTapTargets(settings) {
+            lastTapSettings = settings;
             document.getElementById('tapEnabled').checked = settings.enabled;
             document.getElementById('tapComposite').checked = settings.composite;
             const targetContainer = document.getElementById('tapCameraTargets');
             targetContainer.replaceChildren();
-            for (let slot = 1; slot <= 4; slot += 1) {
+            configuredCameras.forEach(camera => {
+                const slot = camera.slot;
                 const label = document.createElement('label');
                 label.className = 'tap-option';
                 const input = document.createElement('input');
@@ -481,7 +631,7 @@
                 text.textContent = tr('tapCamera', { slot });
                 label.append(input, text);
                 targetContainer.append(label);
-            }
+            });
         }
 
         async function loadTapSettings() {
@@ -520,12 +670,289 @@
             }
         });
 
-        loadCameraSettings().catch(error => setStatus(error.message, 'error'));
-        loadTapSettings().catch(error => {
-            const tapStatus = document.getElementById('tapStatus');
-            tapStatus.textContent = tr('tapLoadError', { message: error.message });
-            tapStatus.dataset.state = 'error';
+        const processingMode = document.getElementById('processingMode');
+        const processingOutput = document.getElementById('processingOutput');
+        const processingStatus = document.getElementById('processingStatus');
+
+        document.querySelectorAll('[data-slot-select]').forEach(select => {
+            select.addEventListener('change', () => {
+                select.dataset.selected = select.value;
+            });
         });
+
+        function fillSlotSelects() {
+            document.querySelectorAll('[data-slot-select]').forEach(select => {
+                const selected = select.dataset.selected
+                    ? Number(select.dataset.selected)
+                    : (Number(select.value) || 1);
+                select.replaceChildren();
+                configuredCameras.forEach(camera => {
+                    const option = new Option(camera.label, String(camera.slot));
+                    option.selected = camera.slot === selected;
+                    select.add(option);
+                });
+                if (![...select.options].some(option => option.selected) && select.options.length) {
+                    select.selectedIndex = 0;
+                }
+                select.dataset.selected = select.value;
+            });
+            const thermalContainer = document.getElementById('thermalSlots');
+            const previous = new Set(
+                [...thermalContainer.querySelectorAll('input:checked')].map(input => Number(input.value))
+            );
+            thermalContainer.replaceChildren();
+            configuredCameras.forEach(camera => {
+                const label = document.createElement('label');
+                label.className = 'check-option';
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.value = String(camera.slot);
+                input.checked = previous.has(camera.slot);
+                label.append(input, document.createTextNode(camera.label));
+                thermalContainer.append(label);
+            });
+        }
+
+        function showModePanel() {
+            document.querySelectorAll('[data-mode-panel]').forEach(panel => {
+                panel.hidden = panel.dataset.modePanel !== processingMode.value;
+            });
+            const outputVisible = processingMode.value !== 'preview';
+            document.querySelector('.processing-output').hidden = !outputVisible;
+            if (capturing) startProcessing();
+            else stopProcessing();
+        }
+
+        function processingPayload() {
+            const thermalSlots = [...document.querySelectorAll('#thermalSlots input:checked')]
+                .map(input => Number(input.value))
+                .filter(slot => slot !== Number(document.getElementById('thermalRgb').value));
+            return {
+                mode: processingMode.value,
+                referenceSlot: Number(document.getElementById('mvsReference').value),
+                detector: document.getElementById('mvsDetector').value,
+                rgbSlot: Number(document.getElementById('thermalRgb').value),
+                thermalSlots,
+                overlayOpacity: Number(document.getElementById('overlayOpacity').value),
+                pictureInPicture: document.getElementById('pictureInPicture').checked,
+                thermalLeftSlot: Number(document.getElementById('thermalLeft').value),
+                thermalRightSlot: Number(document.getElementById('thermalRight').value),
+                claheClip: Number(document.getElementById('claheClip').value),
+                slamReferenceSlot: Number(document.getElementById('slamReference').value)
+            };
+        }
+
+        function applyProcessingSettings(settings) {
+            processingMode.value = settings.mode;
+            document.getElementById('mvsDetector').value = settings.detector;
+            document.getElementById('overlayOpacity').value = settings.overlayOpacity;
+            document.getElementById('pictureInPicture').checked = settings.pictureInPicture;
+            document.getElementById('claheClip').value = settings.claheClip;
+            ['mvsReference', 'thermalRgb', 'thermalLeft', 'thermalRight', 'slamReference'].forEach(id => {
+                const key = {
+                    mvsReference: 'referenceSlot',
+                    thermalRgb: 'rgbSlot',
+                    thermalLeft: 'thermalLeftSlot',
+                    thermalRight: 'thermalRightSlot',
+                    slamReference: 'slamReferenceSlot'
+                }[id];
+                const select = document.getElementById(id);
+                if (settings[key]) select.dataset.selected = String(settings[key]);
+            });
+            fillSlotSelects();
+            document.querySelectorAll('#thermalSlots input').forEach(input => {
+                input.checked = settings.thermalSlots.includes(Number(input.value));
+            });
+            showModePanel();
+        }
+
+        async function loadProcessingSettings() {
+            const response = await fetch('/api/multiview/settings');
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Request failed.');
+            applyProcessingSettings(result);
+        }
+
+        function canvasBlob(video) {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+        }
+
+        async function uploadBrowserFrames() {
+            const form = new FormData();
+            form.append('clientId', cameraClientId);
+            const activeItems = [...cameraCards.values()].filter(item => item.active && item.video.videoWidth);
+            const blobs = await Promise.all(activeItems.map(async item => [item.slot, await canvasBlob(item.video)]));
+            blobs.forEach(([slot, blob]) => {
+                if (blob) form.append(`camera${slot}`, blob, `camera${slot}.jpg`);
+            });
+            if ([...form.keys()].length <= 1) return;
+            await fetch('/api/multiview/frames', { method: 'POST', body: form });
+        }
+
+        async function pollProcessingStatus() {
+            const response = await fetch(`/api/multiview/status?clientId=${encodeURIComponent(cameraClientId)}`);
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Request failed.');
+            processingStatus.textContent = result.message || '';
+        }
+
+        function stopProcessing() {
+            window.clearInterval(uploadTimer);
+            window.clearInterval(processingTimer);
+            uploadTimer = null;
+            processingTimer = null;
+            processingOutput.removeAttribute('src');
+            processingOutput.hidden = true;
+        }
+
+        function startProcessing() {
+            stopProcessing();
+            if (!capturing || processingMode.value === 'preview') return;
+            processingOutput.hidden = false;
+            processingOutput.src = `/api/multiview/output?clientId=${encodeURIComponent(cameraClientId)}&source=${runningSource}&t=${Date.now()}`;
+            processingStatus.textContent = tr('processingWaiting');
+            if (runningSource === 'browser') {
+                uploadTimer = window.setInterval(() => {
+                    uploadBrowserFrames().catch(error => {
+                        processingStatus.textContent = error.message;
+                    });
+                }, 250);
+            }
+            processingTimer = window.setInterval(() => {
+                pollProcessingStatus().catch(error => {
+                    processingStatus.textContent = error.message;
+                });
+            }, 1000);
+        }
+
+        processingMode.addEventListener('change', showModePanel);
+        document.getElementById('saveProcessingSettings').addEventListener('click', async () => {
+            const button = document.getElementById('saveProcessingSettings');
+            button.disabled = true;
+            try {
+                const response = await fetch('/api/multiview/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(processingPayload())
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Request failed.');
+                applyProcessingSettings(result);
+                processingStatus.textContent = tr('processingSaved');
+            } catch (error) {
+                processingStatus.textContent = tr('processingSaveError', { message: error.message });
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        function charucoBoardPayload() {
+            return {
+                squaresX: Number(document.getElementById('charucoSquaresX').value),
+                squaresY: Number(document.getElementById('charucoSquaresY').value),
+                squareSizeMm: Number(document.getElementById('charucoSquareSize').value),
+                markerSizeMm: Number(document.getElementById('charucoMarkerSize').value),
+                referenceSlot: Number(document.getElementById('charucoReference').value)
+            };
+        }
+
+        function applyCharucoStatus(status) {
+            document.getElementById('charucoSquaresX').value = status.squaresX;
+            document.getElementById('charucoSquaresY').value = status.squaresY;
+            document.getElementById('charucoSquareSize').value = status.squareSizeMm;
+            document.getElementById('charucoMarkerSize').value = status.markerSizeMm;
+            document.getElementById('charucoReference').dataset.selected = String(status.referenceSlot);
+            fillSlotSelects();
+            document.getElementById('charucoStatus').textContent = status.message;
+        }
+
+        async function loadCharuco() {
+            const response = await fetch('/api/charuco');
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Request failed.');
+            applyCharucoStatus(result);
+        }
+
+        document.getElementById('saveCharucoBoard').addEventListener('click', async () => {
+            const response = await fetch('/api/charuco/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(charucoBoardPayload())
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                document.getElementById('charucoStatus').textContent = result.error || 'Request failed.';
+                return;
+            }
+            applyCharucoStatus(result);
+        });
+
+        document.getElementById('captureCharuco').addEventListener('click', async () => {
+            if (!capturing) {
+                document.getElementById('charucoStatus').textContent = tr('charucoNeedFrames');
+                return;
+            }
+            let response;
+            if (runningSource === 'browser') {
+                const form = new FormData();
+                form.append('clientId', cameraClientId);
+                form.append('source', 'browser');
+                const activeItems = [...cameraCards.values()].filter(item => item.active && item.video.videoWidth);
+                const blobs = await Promise.all(activeItems.map(async item => [item.slot, await canvasBlob(item.video)]));
+                blobs.forEach(([slot, blob]) => {
+                    if (blob) form.append(`camera${slot}`, blob, `camera${slot}.jpg`);
+                });
+                response = await fetch('/api/charuco/capture', { method: 'POST', body: form });
+            } else {
+                response = await fetch('/api/charuco/capture', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clientId: cameraClientId, source: 'docker' })
+                });
+            }
+            const result = await response.json();
+            if (!response.ok) {
+                document.getElementById('charucoStatus').textContent = result.error || 'Request failed.';
+                return;
+            }
+            applyCharucoStatus(result);
+        });
+
+        document.getElementById('calibrateCharuco').addEventListener('click', async () => {
+            const response = await fetch('/api/charuco/calibrate', { method: 'POST' });
+            const result = await response.json();
+            document.getElementById('charucoStatus').textContent = response.ok
+                ? result.message
+                : (result.error || 'Request failed.');
+            if (response.ok) applyCharucoStatus(result);
+        });
+
+        document.getElementById('resetCharuco').addEventListener('click', async () => {
+            const response = await fetch('/api/charuco', { method: 'DELETE' });
+            const result = await response.json();
+            if (response.ok) applyCharucoStatus(result);
+            else document.getElementById('charucoStatus').textContent = result.error || 'Request failed.';
+        });
+
+        loadCameraSettings()
+            .catch(error => setStatus(error.message, 'error'))
+            .then(() => Promise.all([
+                loadTapSettings().catch(error => {
+                    const tapStatus = document.getElementById('tapStatus');
+                    tapStatus.textContent = tr('tapLoadError', { message: error.message });
+                    tapStatus.dataset.state = 'error';
+                }),
+                loadProcessingSettings().catch(error => {
+                    processingStatus.textContent = error.message;
+                }),
+                loadCharuco().catch(error => {
+                    document.getElementById('charucoStatus').textContent = error.message;
+                })
+            ]));
     </script>
 </body>
 </html>

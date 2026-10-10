@@ -21,10 +21,14 @@
                         <th scope="col" data-camera-settings-copy="device">Camera index</th>
                         <th scope="col" data-camera-settings-copy="label">Custom label / role</th>
                         <th scope="col" data-camera-settings-copy="active">Active</th>
+                        <th scope="col" data-camera-settings-copy="remove">Remove</th>
                     </tr>
                 </thead>
                 <tbody id="cameraSettingsRows"></tbody>
             </table>
+        </div>
+        <div class="camera-settings-toolbar">
+            <button class="camera-settings-add" type="button" id="addCameraSlot" data-camera-settings-copy="addCamera">Add camera</button>
         </div>
         <p class="camera-settings-message" id="cameraSettingsMessage" role="status" aria-live="polite"></p>
         <div class="camera-settings-actions">
@@ -40,10 +44,13 @@
                 kicker: 'Camera setup', title: 'Camera source and mapping',
                 intro: 'Choose the source for the Multi-Camera Monitor in this browser. Camera labels, indexes, and Active settings are shared by the server.',
                 source: 'Capture source', browserSource: 'Browser cameras', dockerSource: 'Docker / Linux devices',
-                slot: 'Slot', device: 'Camera index', label: 'Custom label / role', active: 'Active',
+                slot: 'Slot', device: 'Camera index', label: 'Custom label / role', active: 'Active', remove: 'Remove',
+                addCamera: 'Add camera', removeCamera: 'Remove camera {slot}',
                 cancel: 'Cancel', save: 'Save settings', close: 'Close camera settings',
                 camera: 'Camera {slot}', browserOption: 'Browser camera {index}', dockerOption: '/dev/video{index} (index {index})',
-                duplicateBrowserIndexes: 'Choose a different browser camera index for each slot.',
+                duplicateBrowserIndexes: 'Choose a different camera index for each slot.',
+                maxCameras: 'Sixteen cameras is the maximum.',
+                noIndex: 'No unused camera index remains.',
                 loaded: 'Camera settings loaded.', saved: 'Camera settings saved.',
                 loadError: 'Could not load camera settings: {message}',
                 saveError: 'Could not save camera settings: {message}'
@@ -52,10 +59,13 @@
                 kicker: 'Kamerabeállítás', title: 'Kameraforrás és kiosztás',
                 intro: 'Válaszd ki a Többkamerás monitor forrását ebben a böngészőben. A címkék, indexek és Aktív beállítások a szerver felhasználói között közösek.',
                 source: 'Rögzítési forrás', browserSource: 'Böngésző kamerái', dockerSource: 'Docker / Linux eszközök',
-                slot: 'Hely', device: 'Kameraindex', label: 'Egyéni címke / szerep', active: 'Aktív',
+                slot: 'Hely', device: 'Kameraindex', label: 'Egyéni címke / szerep', active: 'Aktív', remove: 'Eltávolítás',
+                addCamera: 'Kamera hozzáadása', removeCamera: 'A(z) {slot}. kamera eltávolítása',
                 cancel: 'Mégse', save: 'Beállítások mentése', close: 'Kamerabeállítások bezárása',
                 camera: '{slot}. kamera', browserOption: 'Böngésző kamera {index}', dockerOption: '/dev/video{index} (index {index})',
-                duplicateBrowserIndexes: 'Minden kamerához külön böngésző-kameraindexet válassz.',
+                duplicateBrowserIndexes: 'Minden kamerához külön indexet válassz.',
+                maxCameras: 'Legfeljebb tizenhat kamera adható meg.',
+                noIndex: 'Nincs több szabad kameraindex.',
                 loaded: 'Kamerabeállítások betöltve.', saved: 'Kamerabeállítások mentve.',
                 loadError: 'A kamerabeállítások nem tölthetők be: {message}',
                 saveError: 'A kamerabeállítások nem menthetők: {message}'
@@ -112,8 +122,11 @@
             sourceSelect.value = settings.captureSource;
             renderedSource = settings.captureSource;
             draftCameras = settings.cameras.map(camera => ({ ...camera }));
+            if (browserDeviceIndices.length !== draftCameras.length) {
+                browserDeviceIndices = readBrowserDeviceIndices(draftCameras.length);
+            }
             rows.replaceChildren();
-            settings.cameras.forEach(camera => {
+            settings.cameras.forEach((camera, cameraIndex) => {
                 const row = document.createElement('tr');
                 const slot = document.createElement('th');
                 slot.scope = 'row';
@@ -123,12 +136,12 @@
                 const device = document.createElement('select');
                 device.name = 'deviceIndex';
                 device.setAttribute('aria-label', `${text('device')} ${camera.slot}`);
-                for (let index = 0; index < 4; index += 1) {
+                const selectedIndex = settings.captureSource === 'browser'
+                    ? browserDeviceIndices[cameraIndex]
+                    : camera.deviceIndex;
+                for (let index = 0; index <= 31; index += 1) {
                     const key = settings.captureSource === 'browser' ? 'browserOption' : 'dockerOption';
                     const option = new Option(text(key, { index }), String(index));
-                    const selectedIndex = settings.captureSource === 'browser'
-                        ? browserDeviceIndices[camera.slot - 1]
-                        : camera.deviceIndex;
                     option.selected = selectedIndex === index;
                     device.add(option);
                 }
@@ -152,7 +165,17 @@
                 active.checked = camera.active;
                 active.setAttribute('aria-label', `${text('active')} ${camera.slot}`);
                 activeCell.append(active);
-                row.append(slot, deviceCell, labelCell, activeCell);
+
+                const removeCell = document.createElement('td');
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'camera-settings-remove';
+                remove.textContent = text('remove');
+                remove.setAttribute('aria-label', text('removeCamera', { slot: camera.slot }));
+                remove.disabled = settings.cameras.length <= 1;
+                remove.addEventListener('click', () => removeCamera(cameraIndex));
+                removeCell.append(remove);
+                row.append(slot, deviceCell, labelCell, activeCell, removeCell);
                 rows.append(row);
             });
         }
@@ -166,23 +189,79 @@
             }));
         }
 
-        function readBrowserDeviceIndices() {
+        function readBrowserDeviceIndices(count = 4) {
             try {
                 const indexes = JSON.parse(localStorage.getItem('stereoBrowserDeviceIndices') || 'null');
                 if (
                     Array.isArray(indexes)
-                    && indexes.length === 4
-                    && indexes.every(index => Number.isInteger(index) && index >= 0 && index < 4)
-                    && new Set(indexes).size === 4
+                    && indexes.length === count
+                    && indexes.every(index => Number.isInteger(index) && index >= 0 && index <= 31)
+                    && new Set(indexes).size === count
                 ) {
                     return indexes;
                 }
             } catch (error) {
                 console.warn('Ignoring invalid browser camera index preferences.', error);
             }
-            return [0, 1, 2, 3];
+            return Array.from({ length: count }, (_, index) => index);
         }
 
+        function nextFreeIndex(used) {
+            for (let index = 0; index <= 31; index += 1) {
+                if (!used.has(index)) return index;
+            }
+            return null;
+        }
+
+        function syncDraftFromRows() {
+            const visibleCameras = readCameras();
+            if (sourceSelect.value === 'browser') {
+                browserDeviceIndices = visibleCameras.map(camera => camera.deviceIndex);
+                draftCameras = visibleCameras.map((camera, index) => ({
+                    ...camera,
+                    deviceIndex: draftCameras[index] ? draftCameras[index].deviceIndex : camera.deviceIndex
+                }));
+            } else {
+                draftCameras = visibleCameras;
+            }
+        }
+
+        function addCamera() {
+            syncDraftFromRows();
+            message.dataset.state = '';
+            if (draftCameras.length >= 16) {
+                message.textContent = text('maxCameras');
+                message.dataset.state = 'error';
+                return;
+            }
+            const dockerIndex = nextFreeIndex(new Set(draftCameras.map(camera => camera.deviceIndex)));
+            const browserIndex = nextFreeIndex(new Set(browserDeviceIndices));
+            if (dockerIndex === null || browserIndex === null) {
+                message.textContent = text('noIndex');
+                message.dataset.state = 'error';
+                return;
+            }
+            const slot = draftCameras.length + 1;
+            draftCameras.push({
+                slot,
+                label: `Camera ${slot}`,
+                deviceIndex: dockerIndex,
+                active: false
+            });
+            browserDeviceIndices.push(browserIndex);
+            render({ captureSource: sourceSelect.value, cameras: draftCameras });
+        }
+
+        function removeCamera(index) {
+            syncDraftFromRows();
+            if (draftCameras.length <= 1) return;
+            draftCameras.splice(index, 1);
+            browserDeviceIndices.splice(index, 1);
+            draftCameras = draftCameras.map((camera, slotIndex) => ({ ...camera, slot: slotIndex + 1 }));
+            render({ captureSource: sourceSelect.value, cameras: draftCameras });
+        }
+
+        document.getElementById('addCameraSlot').addEventListener('click', addCamera);
         sourceSelect.addEventListener('change', () => {
             const visibleCameras = readCameras();
             if (renderedSource === 'docker') {
@@ -203,10 +282,7 @@
             message.dataset.state = '';
             saveButton.disabled = true;
             const visibleCameras = readCameras();
-            if (
-                sourceSelect.value === 'browser'
-                && new Set(visibleCameras.map(camera => camera.deviceIndex)).size !== 4
-            ) {
+            if (new Set(visibleCameras.map(camera => camera.deviceIndex)).size !== visibleCameras.length) {
                 message.textContent = text('duplicateBrowserIndexes');
                 message.dataset.state = 'error';
                 saveButton.disabled = false;

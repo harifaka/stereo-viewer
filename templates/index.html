@@ -112,6 +112,9 @@
         .camera-settings-active { width: 62px; text-align: center !important; }
         .camera-settings-message { min-height: 18px; margin: 12px 0 0; color: var(--muted); font-size: 11px; }
         .camera-settings-message[data-state="error"] { color: var(--danger); }
+        .camera-settings-toolbar { display: flex; margin-top: 12px; }
+        .camera-settings-add, .camera-settings-remove { min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; }
+        .camera-settings-remove:disabled { cursor: not-allowed; opacity: .4; }
         .camera-settings-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 10px; }
         .camera-settings-actions button { min-height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; }
         .camera-settings-actions .camera-settings-primary { border-color: var(--accent); color: #1c2414; background: var(--accent); font-weight: 700; }

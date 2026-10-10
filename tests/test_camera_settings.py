@@ -77,6 +77,54 @@ class CameraSettingsApiTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn('error', response.get_json())
 
+    def test_persists_one_camera_and_more_than_four(self):
+        cases = [
+            [{
+                'slot': 1,
+                'label': 'Only',
+                'deviceIndex': 31,
+                'active': True,
+            }],
+            [
+                {
+                    'slot': slot,
+                    'label': f'Camera {slot}',
+                    'deviceIndex': slot - 1,
+                    'active': slot == 1,
+                }
+                for slot in range(1, 7)
+            ],
+        ]
+        for cameras in cases:
+            settings = {'cameras': cameras}
+            with self.subTest(cameras=len(cameras)):
+                response = self.client.post('/api/camera-settings', json=settings)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json(), settings)
+                self.assertEqual(self.client.get('/api/camera-settings').get_json(), settings)
+
+    def test_rejects_empty_too_many_and_out_of_range_indexes(self):
+        too_many = {
+            'cameras': [
+                {
+                    'slot': slot,
+                    'label': f'Camera {slot}',
+                    'deviceIndex': slot - 1,
+                    'active': False,
+                }
+                for slot in range(1, 18)
+            ]
+        }
+        out_of_range = camera_configuration()
+        out_of_range['cameras'][0]['deviceIndex'] = 32
+        negative = camera_configuration()
+        negative['cameras'][0]['deviceIndex'] = -1
+        for settings in ({'cameras': []}, too_many, out_of_range, negative):
+            with self.subTest(settings=settings):
+                response = self.client.post('/api/camera-settings', json=settings)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('error', response.get_json())
+
     def test_requires_a_camera_client_id_before_starting_server_cameras(self):
         response = self.client.post('/api/cameras/start', json={})
 

@@ -58,28 +58,28 @@ This document outlines the development roadmap for a Dockerized stereoscopic vis
 ## Phase 3: Multi-Sensor, Thermal, & Spatial Mapping (V4)
 **Goal:** Move beyond basic stereo vision into industrial-grade multi-sensor fusion, supporting asymmetrical camera setups, thermal imaging, and moving environments.
 
-- [ ] **Dynamic Multi-Camera Architecture**
-  - [x] Add a browser-based full-window monitor for up to four distinct local camera feeds with per-camera browser-exposed controls.
-  - [ ] Process three or four camera streams in the backend, beyond the existing two-camera stereo pipeline.
-  - Update UI to allow switching between different processing modes (MVS, Thermal, SLAM).
-- [ ] **Multi-View Stereo (MVS) & Feature Matching**
-  - Implement ORB/SIFT feature extraction for asymmetrical (non-stereo) camera placements.
-  - Perform point matching (`BFMatcher` or `FlannBasedMatcher`) and draw matching lines.
-  - Use Epipolar geometry to establish 3D mesh references without strict parallel alignment.
-- [ ] **ChArUco Marker Global Calibration**
-  - Integrate `opencv-contrib-python` for ArUco dictionary access.
-  - Implement ChArUco board detection to calibrate multiple cameras looking at the same scene from vastly different angles, unifying them into a single 3D coordinate system.
-- [ ] **Thermal & RGB Sensor Fusion**
-  - Support secondary/tertiary inputs as thermal streams.
-  - Implement Homography transformation (`cv2.findHomography` and `cv2.warpPerspective`) to align the different field-of-views and lens distortions of thermal vs RGB cameras.
-  - Create a Picture-in-Picture or translucent composite overlay (Thermal mapped exactly onto RGB).
-- [ ] **Thermal Stereo Vision (CLAHE)**
-  - Implement Contrast Limited Adaptive Histogram Equalization (`cv2.createCLAHE`) on raw thermal images.
-  - Feed the micro-contrast-enhanced thermal images into the StereoSGBM algorithm to calculate depth in pitch black or smoke-filled environments.
+- [x] **Dynamic Multi-Camera Architecture**
+  - [x] Add a browser-based full-window monitor for 1 to 16 local camera feeds with per-camera browser-exposed controls.
+  - [x] Process one to sixteen camera streams in the backend, beyond the existing two-camera stereo pipeline.
+  - [x] Update UI to allow switching between different processing modes (MVS, Thermal, SLAM).
+- [x] **Multi-View Stereo (MVS) & Feature Matching**
+  - [x] Implement ORB/SIFT feature extraction for asymmetrical (non-stereo) camera placements.
+  - [x] Perform point matching (`BFMatcher` or `FlannBasedMatcher`) and draw matching lines.
+  - [x] Use Epipolar geometry to establish sparse 3D references without strict parallel alignment.
+- [x] **ChArUco Marker Global Calibration**
+  - [x] Integrate `opencv-contrib-python` for ArUco dictionary access.
+  - [x] Implement ChArUco board detection to calibrate multiple cameras looking at the same scene from vastly different angles, unifying them into a single 3D coordinate system.
+- [x] **Thermal & RGB Sensor Fusion**
+  - [x] Support secondary and further inputs as thermal streams.
+  - [x] Implement Homography transformation (`cv2.findHomography` and `cv2.warpPerspective`) to align the different field-of-views and lens distortions of thermal vs RGB cameras.
+  - [x] Create a Picture-in-Picture or translucent composite overlay (Thermal mapped exactly onto RGB).
+- [x] **Thermal Stereo Vision (CLAHE)**
+  - [x] Implement Contrast Limited Adaptive Histogram Equalization (`cv2.createCLAHE`) on raw thermal images.
+  - [x] Feed the micro-contrast-enhanced thermal images into the StereoSGBM algorithm to calculate depth in pitch black or smoke-filled environments.
 - [ ] **Visual SLAM & 3D Mesh Generation**
-  - Implement Optical Flow (`cv2.calcOpticalFlowPyrLK`) to track corner points across consecutive frames.
-  - Visualize motion vectors on the screen to track the camera rig's movement through space (Odometry).
-  - (Stretch Goal) Integrate Poisson surface reconstruction to turn point clouds into solid 3D meshes suitable for game engines (Unity/Unreal).
+  - [x] Implement Optical Flow (`cv2.calcOpticalFlowPyrLK`) to track corner points across consecutive frames.
+  - [x] Visualize motion vectors on the screen to track the camera rig's movement through space (Odometry).
+  - [ ] (Stretch Goal) Integrate Poisson surface reconstruction to turn point clouds into solid 3D meshes suitable for game engines (Unity/Unreal).
 
 ## Phase 4: Google TAP-Net & Temporal Spatial Tracking
 **Goal:** Eliminate disparity flickering and stabilize tracking dynamically using TAP-Net for temporal consistency.

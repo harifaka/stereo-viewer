@@ -11,6 +11,7 @@ from threading import Condition, Event, Lock, Thread
 from flask import Flask, render_template, Response, request, jsonify, send_file, redirect, url_for
 import cv2
 import numpy as np
+import multiview
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
@@ -58,8 +59,9 @@ DEFAULT_CAMERA_SETTINGS = {
 def validate_camera_settings(data):
     if not isinstance(data, dict) or not isinstance(data.get('cameras'), list):
         raise ValueError('Camera settings must contain a cameras list.')
-    if len(data['cameras']) != 4:
-        raise ValueError('Configure exactly four camera slots.')
+    camera_count = len(data['cameras'])
+    if camera_count < 1 or camera_count > 16:
+        raise ValueError('Configure between 1 and 16 camera slots.')
 
     cameras = []
     device_indices = set()
@@ -69,13 +71,13 @@ def validate_camera_settings(data):
             or type(camera.get('slot')) is not int
             or camera.get('slot') != expected_slot
         ):
-            raise ValueError('Camera slots must be numbered 1 through 4 in order.')
+            raise ValueError('Camera slots must be numbered 1 through N in order.')
         label = camera.get('label')
         if not isinstance(label, str) or not label.strip() or len(label.strip()) > 40:
             raise ValueError('Each camera label must contain 1 to 40 characters.')
         device_index = camera.get('deviceIndex')
-        if type(device_index) is not int or device_index not in range(4):
-            raise ValueError('Camera device indexes must be integers from 0 to 3.')
+        if type(device_index) is not int or device_index not in range(32):
+            raise ValueError('Camera device indexes must be integers from 0 to 31.')
         if device_index in device_indices:
             raise ValueError('Each camera must use a different device index.')
         device_indices.add(device_index)
@@ -129,6 +131,7 @@ class CameraStream:
         self._condition = Condition()
         self._stop_event = Event()
         self._frame = None
+        self._raw_frame = None
         self._state = 'starting'
         self._error = None
         self._thread = Thread(target=self._capture, name=f'camera-{slot}', daemon=True)
@@ -183,6 +186,12 @@ class CameraStream:
                 + b'\r\n'
             )
 
+    def latest_frame(self):
+        with self._condition:
+            if self._raw_frame is None:
+                return None
+            return self._raw_frame.copy()
+
     def _capture(self):
         capture = None
         try:
@@ -201,6 +210,7 @@ class CameraStream:
                     raise RuntimeError(f'Could not encode a frame from /dev/video{self.device_index}.')
                 with self._condition:
                     self._frame = buffer.tobytes()
+                    self._raw_frame = frame.copy()
                     self._condition.notify_all()
         except Exception as error:
             with self._condition:
@@ -285,10 +295,21 @@ class CameraStreamManager:
         with self._lock:
             return [stream.status() for stream in self._streams.values()]
 
+    def latest_frames(self):
+        with self._lock:
+            streams = list(self._streams.values())
+        frames = {}
+        for stream in streams:
+            frame = stream.latest_frame()
+            if frame is not None:
+                frames[stream.slot] = frame
+        return frames
+
 
 camera_settings_lock = Lock()
 camera_settings = load_camera_settings() if CAMERA_SETTINGS_PATH.is_file() else DEFAULT_CAMERA_SETTINGS
 camera_stream_manager = CameraStreamManager()
+multiview_runtime = multiview.MultiViewRuntime()
 CALIBRATION_VIEWS_REQUIRED = 8
 COLOR_MAPS = {
     'TURBO': cv2.COLORMAP_TURBO,
@@ -466,7 +487,12 @@ def validate_pose_settings(data):
     return {'enabled': enabled, 'view': view, 'confidence': confidence}
 
 
-def validate_tap_settings(data):
+def configured_camera_slots():
+    with camera_settings_lock:
+        return {camera['slot'] for camera in camera_settings['cameras']}
+
+
+def validate_tap_settings(data, allowed_slots=None):
     if not isinstance(data, dict):
         raise ValueError('TAP-Net settings must be a JSON object.')
     enabled = data.get('enabled', tap_settings['enabled'])
@@ -475,8 +501,10 @@ def validate_tap_settings(data):
     camera_slots = data.get('cameraSlots', tap_settings['cameraSlots'])
     if not isinstance(camera_slots, list):
         raise ValueError('cameraSlots must be a list.')
-    if any(type(slot) is not int or slot not in (1, 2, 3, 4) for slot in camera_slots):
-        raise ValueError('cameraSlots may contain only integers from 1 to 4.')
+    if allowed_slots is None:
+        allowed_slots = configured_camera_slots()
+    if any(type(slot) is not int or slot not in allowed_slots for slot in camera_slots):
+        raise ValueError('cameraSlots may contain only configured camera slots.')
     if len(set(camera_slots)) != len(camera_slots):
         raise ValueError('cameraSlots must not contain duplicates.')
     composite = data.get('composite', tap_settings['composite'])
@@ -1231,6 +1259,163 @@ def calibrate():
         params = stereo_params.copy()
     app.logger.info('stereo parameters updated params=%s', params)
     return jsonify({'status': 'success', 'params': params})
+
+def valid_camera_client_id(client_id):
+    return isinstance(client_id, str) and 8 <= len(client_id) <= 100
+
+
+def multiview_frames_for(source, client_id):
+    if source == 'docker':
+        return camera_stream_manager.latest_frames()
+    return multiview_runtime.hub.snapshot(client_id)
+
+
+def store_uploaded_frames(client_id):
+    frames = {}
+    for key, upload in request.files.items():
+        if not key.startswith('camera') or not key[6:].isdigit():
+            continue
+        slot = int(key[6:])
+        if slot not in range(1, 17):
+            continue
+        frame = decode_frame(upload)
+        if frame is not None:
+            frames[slot] = frame
+    if frames:
+        multiview_runtime.hub.update(client_id, frames)
+    return frames
+
+
+@app.route('/api/multiview/settings', methods=['GET', 'POST'])
+def multiview_settings_endpoint():
+    if request.method == 'GET':
+        return jsonify(multiview_runtime.current_settings())
+    data = request.get_json(silent=True)
+    try:
+        updated = multiview_runtime.update_settings(data or {})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    return jsonify(updated)
+
+
+@app.route('/api/multiview/frames', methods=['POST'])
+def multiview_frames_endpoint():
+    client_id = request.form.get('clientId')
+    if not valid_camera_client_id(client_id):
+        return jsonify({'error': 'A valid camera client ID is required.'}), 400
+    frames = store_uploaded_frames(client_id)
+    if not frames:
+        return jsonify({'error': 'Upload a valid image for at least one camera.'}), 400
+    return jsonify({'slots': sorted(frames)})
+
+
+@app.route('/api/multiview/status')
+def multiview_status_endpoint():
+    client_id = request.args.get('clientId', '')
+    return jsonify(multiview_runtime.status_for(client_id))
+
+
+@app.route('/api/multiview/output')
+def multiview_output_endpoint():
+    client_id = request.args.get('clientId', '')
+    source = request.args.get('source', 'browser')
+    if not valid_camera_client_id(client_id):
+        return jsonify({'error': 'A valid camera client ID is required.'}), 400
+    if source not in ('browser', 'docker'):
+        return jsonify({'error': 'source must be browser or docker.'}), 400
+
+    def generate():
+        while True:
+            frames = multiview_frames_for(source, client_id)
+            with params_lock:
+                current_params = stereo_params.copy()
+            try:
+                jpeg, status = multiview_runtime.render(
+                    frames,
+                    current_params,
+                    COLOR_MAPS[current_params['colorMap']],
+                    STEREO_MODES[current_params['mode']],
+                )
+            except Exception:
+                app.logger.exception('multiview processing failed')
+                jpeg = multiview.encode_jpeg(multiview.message_image('Processing failed. See the application log.'))
+                status = {'mode': multiview_runtime.current_settings()['mode'], 'ok': False, 'message': 'Processing failed.'}
+            multiview_runtime.remember_status(client_id, status)
+            yield (
+                b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'
+                + jpeg
+                + b'\r\n'
+            )
+            time.sleep(0.2)
+
+    return Response(
+        generate(),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={'Cache-Control': 'no-store'},
+    )
+
+
+@app.route('/api/charuco', methods=['GET', 'DELETE'])
+def charuco_endpoint():
+    if request.method == 'DELETE':
+        return jsonify(multiview_runtime.reset_charuco())
+    return jsonify(multiview_runtime.charuco_status())
+
+
+@app.route('/api/charuco/settings', methods=['POST'])
+def charuco_settings_endpoint():
+    data = request.get_json(silent=True)
+    try:
+        status = multiview_runtime.update_board(data or {})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    return jsonify(status)
+
+
+@app.route('/api/charuco/capture', methods=['POST'])
+def charuco_capture_endpoint():
+    if request.files:
+        client_id = request.form.get('clientId')
+        source = request.form.get('source', 'browser')
+    else:
+        data = request.get_json(silent=True) or {}
+        client_id = data.get('clientId')
+        source = data.get('source', 'docker')
+    if not valid_camera_client_id(client_id):
+        return jsonify({'error': 'A valid camera client ID is required.'}), 400
+    if source not in ('browser', 'docker'):
+        return jsonify({'error': 'source must be browser or docker.'}), 400
+    if source == 'browser':
+        frames = store_uploaded_frames(client_id)
+    else:
+        frames = camera_stream_manager.latest_frames()
+    try:
+        status = multiview_runtime.capture(frames)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    return jsonify(status)
+
+
+@app.route('/api/charuco/calibrate', methods=['POST'])
+def charuco_calibrate_endpoint():
+    try:
+        status = multiview_runtime.calibrate()
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    return jsonify(status)
+
+
+@app.route('/charuco-board.png')
+def charuco_board_png():
+    encoded, buffer = cv2.imencode('.png', multiview_runtime.board_image())
+    if not encoded:
+        return jsonify({'error': 'Could not draw the ChArUco board.'}), 500
+    return send_file(
+        BytesIO(buffer.tobytes()),
+        mimetype='image/png',
+        download_name='charuco-board.png',
+    )
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, threaded=True)
