@@ -99,7 +99,7 @@ def detect_available_cameras():
 
         capture = None
         try:
-            capture = cv2.VideoCapture(device_index)
+            capture = cv2.VideoCapture(device_index, cv2.CAP_V4L2)
             if not capture.isOpened():
                 continue
             success, frame = capture.read()
@@ -267,6 +267,13 @@ class CameraStream:
         try:
             capture = cv2.VideoCapture(self.device_index)
             if not capture.isOpened():
+                device_path = f'/dev/video{self.device_index}'
+                if os.path.exists(device_path):
+                    app.logger.warning(
+                        'Could not open %s although the device exists. It may be busy; '
+                        'Disable camera permissions in the browser settings for this site.',
+                        device_path,
+                    )
                 raise RuntimeError(f'Could not open /dev/video{self.device_index}.')
             with self._condition:
                 self._state = 'connected'
@@ -343,6 +350,37 @@ class CameraStreamManager:
                     stream.join()
                 self._streams = {}
                 self._replace_streams(settings)
+
+    def rescan(self, discover_settings):
+        with self._lock:
+            was_running = self._running
+            previous_settings = {
+                'cameras': [
+                    {
+                        'slot': stream.slot,
+                        'label': stream.label,
+                        'deviceIndex': stream.device_index,
+                        'active': True,
+                    }
+                    for stream in self._streams.values()
+                ]
+            }
+            if was_running:
+                streams = list(self._streams.values())
+                for stream in streams:
+                    stream.request_stop()
+                for stream in streams:
+                    stream.join()
+                self._streams = {}
+            try:
+                settings = discover_settings()
+            except Exception:
+                if was_running:
+                    self._replace_streams(previous_settings)
+                raise
+            if was_running:
+                self._replace_streams(settings or previous_settings)
+            return settings
 
     def _replace_streams(self, settings):
         self._streams = {
@@ -1710,14 +1748,58 @@ def camera_settings_endpoint():
 
 @app.route('/api/cameras/available')
 def available_cameras_endpoint():
+    available_device_indices = []
+
+    def discover():
+        available_device_indices.extend(detect_available_cameras())
+        return None
+
+    camera_stream_manager.rescan(discover)
     return jsonify({
         'devices': [
             {
                 'deviceIndex': device_index,
                 'path': f'/dev/video{device_index}',
             }
-            for device_index in AVAILABLE_CAMERA_INDICES
+            for device_index in available_device_indices
         ]
+    })
+
+
+@app.route('/api/cameras/rescan', methods=['POST'])
+def rescan_cameras_endpoint():
+    global AVAILABLE_CAMERA_INDICES, camera_settings
+    available_device_indices = []
+
+    def discover_and_assign():
+        global AVAILABLE_CAMERA_INDICES, camera_settings
+        available_device_indices.extend(detect_available_cameras())
+        AVAILABLE_CAMERA_INDICES = available_device_indices
+        if not available_device_indices:
+            return None
+        updated_settings = automatic_camera_settings(available_device_indices)
+        if updated_settings != camera_settings or not CAMERA_SETTINGS_PATH.is_file():
+            save_camera_settings(updated_settings)
+        camera_settings = updated_settings
+        return updated_settings
+
+    with camera_settings_lock:
+        try:
+            updated_settings = camera_stream_manager.rescan(discover_and_assign)
+        except OSError as error:
+            return jsonify({'error': f'Could not persist camera settings: {error}'}), 500
+        settings = camera_settings
+    devices = [
+        {
+            'deviceIndex': device_index,
+            'path': f'/dev/video{device_index}',
+        }
+        for device_index in available_device_indices
+    ]
+    return jsonify({
+        'devices': devices,
+        'settings': settings,
+        'assigned': updated_settings is not None,
     })
 
 

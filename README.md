@@ -18,6 +18,8 @@ Browser camera events appear as `browser_camera` entries. They include permissio
 
 Open <http://localhost:5000>. The stereo monitor captures its selected pair in the browser and sends frames to Flask for processing. The multi-camera monitor supports browser-local capture and direct Linux/Docker capture; choose its source with the gear button beside the language selector.
 
+For Linux/Docker capture, the camera settings panel lists currently verified `/dev/video` devices. Use **Rescan and assign cameras** to probe the devices again and assign the first three working cameras to slots 1–3; saved assignments are left unchanged until you use this action.
+
 The interface is available in English and Hungarian. Use the **EN / HU** selector in the page header; the selected language is remembered in this browser.
 
 ### Interface Layout

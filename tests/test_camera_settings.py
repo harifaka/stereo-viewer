@@ -40,6 +40,12 @@ class CameraSettingsApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), camera_configuration())
 
+    def test_multi_camera_settings_panel_exposes_manual_rescan(self):
+        response = self.client.get('/multi-camera')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'id="rescanCameraDevices"', response.data)
+
     def test_post_persists_labels_indexes_and_active_flags(self):
         settings = camera_configuration()
         settings['cameras'][0].update(label='Front left', deviceIndex=3, active=False)
@@ -132,12 +138,8 @@ class CameraSettingsApiTests(unittest.TestCase):
         self.assertEqual(response.get_json()['error'], 'A valid camera client ID is required.')
 
     def test_available_camera_endpoint_lists_detected_video_nodes(self):
-        original_devices = stereo_app.AVAILABLE_CAMERA_INDICES
-        stereo_app.AVAILABLE_CAMERA_INDICES = [0, 4, 31]
-        try:
+        with patch.object(stereo_app, 'detect_available_cameras', return_value=[0, 4, 31]):
             response = self.client.get('/api/cameras/available')
-        finally:
-            stereo_app.AVAILABLE_CAMERA_INDICES = original_devices
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {
@@ -148,12 +150,42 @@ class CameraSettingsApiTests(unittest.TestCase):
             ]
         })
 
+    def test_rescan_reassigns_detected_cameras_and_persists_the_layout(self):
+        with patch.object(stereo_app, 'detect_available_cameras', return_value=[4, 6, 9, 12]):
+            response = self.client.post('/api/cameras/rescan')
+
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()
+        self.assertTrue(result['assigned'])
+        self.assertEqual(
+            [camera['deviceIndex'] for camera in result['settings']['cameras']],
+            [4, 6, 9],
+        )
+        self.assertEqual(
+            [device['path'] for device in result['devices']],
+            ['/dev/video4', '/dev/video6', '/dev/video9', '/dev/video12'],
+        )
+        with stereo_app.CAMERA_SETTINGS_PATH.open(encoding='utf-8') as config_file:
+            self.assertEqual(json.load(config_file), result['settings'])
+
+    def test_rescan_with_no_working_devices_keeps_current_assignments(self):
+        with patch.object(stereo_app, 'detect_available_cameras', return_value=[]):
+            response = self.client.post('/api/cameras/rescan')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()['assigned'])
+        self.assertEqual(response.get_json()['settings'], camera_configuration())
+
 
 class CameraDiscoveryTests(unittest.TestCase):
     def test_detects_only_existing_devices_that_return_a_frame(self):
+        released_devices = []
+        capture_backends = []
+
         class FakeCapture:
-            def __init__(self, device_index):
+            def __init__(self, device_index, backend):
                 self.device_index = device_index
+                capture_backends.append(backend)
 
             def isOpened(self):
                 return self.device_index in (1, 2, 3)
@@ -162,7 +194,7 @@ class CameraDiscoveryTests(unittest.TestCase):
                 return self.device_index == 1, object() if self.device_index == 1 else None
 
             def release(self):
-                pass
+                released_devices.append(self.device_index)
 
         def exists(path):
             return path in ('/dev/video1', '/dev/video2', '/dev/video3')
@@ -171,6 +203,9 @@ class CameraDiscoveryTests(unittest.TestCase):
             stereo_app.cv2, 'VideoCapture', side_effect=FakeCapture
         ):
             self.assertEqual(stereo_app.detect_available_cameras(), [1])
+
+        self.assertEqual(released_devices, [1, 2, 3])
+        self.assertEqual(capture_backends, [stereo_app.cv2.CAP_V4L2] * 3)
 
     def test_automatic_settings_assign_the_first_three_detected_devices(self):
         settings = stereo_app.automatic_camera_settings([2, 5, 9, 12])
@@ -198,6 +233,72 @@ class CameraDiscoveryTests(unittest.TestCase):
 
 
 class CameraStreamManagerTests(unittest.TestCase):
+    def test_logs_browser_permission_guidance_when_an_existing_camera_cannot_open(self):
+        class FakeCapture:
+            def __init__(self):
+                self.released = False
+
+            def isOpened(self):
+                return False
+
+            def release(self):
+                self.released = True
+
+        capture = FakeCapture()
+        stream = stereo_app.CameraStream(1, 'Camera 1', 0)
+        with patch.object(stereo_app.cv2, 'VideoCapture', return_value=capture), patch.object(
+            stereo_app.os.path, 'exists', return_value=True
+        ), patch.object(stereo_app.app.logger, 'warning') as warning, patch.object(
+            stereo_app.app.logger, 'exception'
+        ):
+            stream._capture()
+
+        self.assertTrue(capture.released)
+        self.assertIn(
+            'Disable camera permissions in the browser settings for this site',
+            warning.call_args.args[0],
+        )
+
+    def test_rescan_releases_running_captures_before_discovery_and_restarts_them(self):
+        created_streams = []
+
+        class FakeCameraStream:
+            def __init__(self, slot, label, device_index):
+                self.slot = slot
+                self.label = label
+                self.device_index = device_index
+                self.stopped = False
+                created_streams.append(self)
+
+            def start(self):
+                pass
+
+            def request_stop(self):
+                self.stopped = True
+
+            def join(self):
+                pass
+
+        manager = stereo_app.CameraStreamManager()
+        with patch.object(stereo_app, 'CameraStream', FakeCameraStream):
+            manager.start(camera_configuration(), 'client-one')
+            old_streams = list(created_streams)
+            updated_settings = stereo_app.automatic_camera_settings([4, 6, 9])
+
+            def discover():
+                self.assertTrue(all(stream.stopped for stream in old_streams))
+                self.assertEqual(manager._streams, {})
+                return updated_settings
+
+            self.assertEqual(manager.rescan(discover), updated_settings)
+
+        self.assertEqual(
+            [stream.device_index for stream in created_streams[len(old_streams):]],
+            [4, 6, 9],
+        )
+        self.assertEqual(manager._clients, {'client-one'})
+        manager.stop()
+
     def test_shares_capture_workers_until_the_last_client_disconnects(self):
         created_streams = []
 
