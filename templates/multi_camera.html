@@ -270,7 +270,7 @@
                 calibrateCameras: 'Calibrate cameras', resetCalibration: 'Reset calibration',
                 charucoNeedFrames: 'Connect at least two cameras, show them the board, then capture.',
                 pageNavigation: 'Pages', stereoPage: 'Stereo monitor', multiCameraPage: 'Multi-camera monitor',
-                disconnected: 'Disconnected', connected: 'Connected', connect: 'Connect active cameras',
+                disconnected: 'Disconnected', connected: 'Connected', reconnecting: 'Reconnecting', connect: 'Connect active cameras',
                 disconnect: 'Disconnect cameras', choose: 'Configure camera labels and active devices, then connect. Browser mode uses webcams on this computer; Docker mode captures server devices.',
                 awaiting: 'Awaiting camera', inactive: 'Inactive', starting: 'Starting…', error: 'Camera error',
                 browserPermission: 'Allow camera access in your browser, then reconnect.',
@@ -307,7 +307,7 @@
                 calibrateCameras: 'Kamerák kalibrálása', resetCalibration: 'Kalibráció törlése',
                 charucoNeedFrames: 'Csatlakoztass legalább két kamerát, mutasd nekik a táblát, majd rögzíts nézetet.',
                 pageNavigation: 'Oldalak', stereoPage: 'Sztereó monitor', multiCameraPage: 'Többkamerás monitor',
-                disconnected: 'Leválasztva', connected: 'Csatlakoztatva', connect: 'Aktív kamerák csatlakoztatása',
+                disconnected: 'Leválasztva', connected: 'Csatlakoztatva', reconnecting: 'Újracsatlakozás', connect: 'Aktív kamerák csatlakoztatása',
                 disconnect: 'Kamerák leválasztása', choose: 'Állítsd be a kameracímkéket és az aktív eszközöket, majd csatlakozz. Böngésző módban az ezen a gépen lévő, Docker módban a szerver kameráit használja.',
                 awaiting: 'Várakozás a kamerára', inactive: 'Inaktív', starting: 'Indítás…', error: 'Kamerahiba',
                 browserPermission: 'Engedélyezd a kamerahasználatot a böngészőben, majd csatlakozz újra.',
@@ -493,6 +493,11 @@
                     item.card.removeAttribute('data-live');
                     item.state.textContent = `${tr('error')}: ${camera.error}`;
                     item.detail.textContent = camera.error;
+                    item.placeholder.hidden = false;
+                    item.image.hidden = true;
+                } else if (camera.state === 'reconnecting') {
+                    item.card.removeAttribute('data-live');
+                    item.state.textContent = `${tr('reconnecting')}: ${camera.error || ''}`;
                     item.placeholder.hidden = false;
                     item.image.hidden = true;
                 } else {

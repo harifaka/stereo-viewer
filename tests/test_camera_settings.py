@@ -46,6 +46,14 @@ class CameraSettingsApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'id="rescanCameraDevices"', response.data)
 
+    def test_stereo_monitor_offers_browser_and_docker_capture_sources(self):
+        response = self.client.get('/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'id="stereoCaptureSource"', response.data)
+        self.assertIn(b'value="docker"', response.data)
+        self.assertIn(b'id="leftDockerImage"', response.data)
+
     def test_post_persists_labels_indexes_and_active_flags(self):
         settings = camera_configuration()
         settings['cameras'][0].update(label='Front left', deviceIndex=3, active=False)
@@ -181,6 +189,7 @@ class CameraDiscoveryTests(unittest.TestCase):
     def test_detects_only_existing_devices_that_return_a_frame(self):
         released_devices = []
         capture_backends = []
+        read_attempts = {}
 
         class FakeCapture:
             def __init__(self, device_index, backend):
@@ -191,6 +200,7 @@ class CameraDiscoveryTests(unittest.TestCase):
                 return self.device_index in (1, 2, 3)
 
             def read(self):
+                read_attempts[self.device_index] = read_attempts.get(self.device_index, 0) + 1
                 return self.device_index == 1, object() if self.device_index == 1 else None
 
             def release(self):
@@ -206,6 +216,7 @@ class CameraDiscoveryTests(unittest.TestCase):
 
         self.assertEqual(released_devices, [1, 2, 3])
         self.assertEqual(capture_backends, [stereo_app.cv2.CAP_V4L2] * 3)
+        self.assertEqual(read_attempts, {1: 1, 2: 5, 3: 5})
 
     def test_automatic_settings_assign_the_first_three_detected_devices(self):
         settings = stereo_app.automatic_camera_settings([2, 5, 9, 12])
@@ -233,31 +244,67 @@ class CameraDiscoveryTests(unittest.TestCase):
 
 
 class CameraStreamManagerTests(unittest.TestCase):
-    def test_logs_browser_permission_guidance_when_an_existing_camera_cannot_open(self):
+    def test_keeps_retrying_a_camera_that_is_not_openable(self):
+        stream = stereo_app.CameraStream(1, 'Camera 1', 0)
+
         class FakeCapture:
             def __init__(self):
                 self.released = False
 
             def isOpened(self):
+                stream._stop_event.set()
                 return False
 
             def release(self):
                 self.released = True
 
         capture = FakeCapture()
-        stream = stereo_app.CameraStream(1, 'Camera 1', 0)
         with patch.object(stereo_app.cv2, 'VideoCapture', return_value=capture), patch.object(
-            stereo_app.os.path, 'exists', return_value=True
-        ), patch.object(stereo_app.app.logger, 'warning') as warning, patch.object(
-            stereo_app.app.logger, 'exception'
-        ):
+            stereo_app.app.logger, 'warning'
+        ) as warning:
             stream._capture()
 
         self.assertTrue(capture.released)
-        self.assertIn(
-            'Disable camera permissions in the browser settings for this site',
-            warning.call_args.args[0],
-        )
+        self.assertIn('retry', warning.call_args.args[0])
+
+    def test_reopens_after_a_transient_camera_open_failure(self):
+        stream = stereo_app.CameraStream(1, 'Camera 1', 0)
+        captures = []
+
+        class FakeFrame:
+            def copy(self):
+                return self
+
+        class FakeBuffer:
+            def tobytes(self):
+                return b'jpeg'
+
+        class FakeCapture:
+            def __init__(self, device_index, backend):
+                self.attempt = len(captures) + 1
+                self.released = False
+                captures.append(self)
+
+            def isOpened(self):
+                return self.attempt > 1
+
+            def read(self):
+                stream._stop_event.set()
+                return True, FakeFrame()
+
+            def release(self):
+                self.released = True
+
+        with patch.object(stereo_app.cv2, 'VideoCapture', side_effect=FakeCapture), patch.object(
+            stereo_app.cv2, 'imencode', return_value=(True, FakeBuffer())
+        ), patch.object(stream._stop_event, 'wait', return_value=False):
+            stream._capture()
+
+        self.assertEqual(len(captures), 2)
+        self.assertTrue(all(capture.released for capture in captures))
+        self.assertEqual(stream.status()['state'], 'disconnected')
+        self.assertIsNone(stream.status()['error'])
+        self.assertEqual(stream._frame, b'jpeg')
 
     def test_rescan_releases_running_captures_before_discovery_and_restarts_them(self):
         created_streams = []

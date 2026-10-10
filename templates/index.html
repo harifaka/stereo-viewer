@@ -24,16 +24,16 @@
         .panel-head strong { font-size: 13px; font-weight: 650; }
         .panel-head > span:not(.panel-tools) { padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .6px; }
         .view { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background-color: #0d100e; background-image: radial-gradient(#ffffff0a 1px, transparent 1px); background-size: 18px 18px; }
-        video, .depth-image { display: block; width: 100%; height: 100%; object-fit: contain; }
+        video, .docker-image, .depth-image { display: block; width: 100%; height: 100%; object-fit: contain; }
         .pose-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
         .pose-overlay[hidden] { display: none; }
         .placeholder { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; color: var(--subtle); text-align: center; }
         .placeholder::before { display: block; width: 44px; height: 44px; margin-bottom: 6px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel-sunken) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236f7a71' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5-3v10l-5-3z'/%3E%3Crect x='3' y='6' width='12' height='12' rx='2'/%3E%3C/svg%3E") center / 22px no-repeat; content: ""; }
-        video[hidden], .depth-image[hidden], .placeholder[hidden] { display: none; }
-        video, .depth-image { cursor: zoom-in; }
-        video:focus-visible, .depth-image:focus-visible { outline-offset: -4px; }
+        video[hidden], .docker-image[hidden], .depth-image[hidden], .placeholder[hidden] { display: none; }
+        video, .docker-image, .depth-image { cursor: zoom-in; }
+        video:focus-visible, .docker-image:focus-visible, .depth-image:focus-visible { outline-offset: -4px; }
         .view:fullscreen { width: 100vw; height: 100vh; max-height: none; aspect-ratio: auto; background: #080a08; }
-        .view:fullscreen video, .view:fullscreen .depth-image { object-fit: contain; }
+        .view:fullscreen video, .view:fullscreen .docker-image, .view:fullscreen .depth-image { object-fit: contain; }
         .placeholder b { color: #c3cdc4; font-size: 13px; font-weight: 600; }
         .placeholder span { font-size: 12px; }
         .camera-label { position: absolute; bottom: 10px; left: 10px; padding: 4px 9px; border: 1px solid #ffffff1f; border-radius: 999px; color: white; background: #0b0d0bb3; backdrop-filter: blur(6px); font-size: 10px; font-weight: 650; letter-spacing: .6px; text-transform: uppercase; }
@@ -212,6 +212,7 @@
                 <div class="title-block"><div class="section-kicker" data-i18n="captureDisparity">Capture / disparity</div><h2 data-i18n="stereoMonitor">Stereo monitor</h2></div>
                 <div class="control-bar">
                     <div class="control-group">
+                        <label class="select-wrap" for="stereoCaptureSource"><span data-i18n="captureSource">Source</span><select id="stereoCaptureSource" aria-label="Camera source" data-i18n-aria="cameraSource"><option value="browser" data-i18n="browserCameras">Browser cameras</option><option value="docker" data-i18n="dockerCameras">Docker / Linux devices</option></select></label>
                         <label class="select-wrap" for="leftCamera"><span data-i18n="left">Left</span><select id="leftCamera" aria-label="Left camera" data-i18n-aria="leftCamera"></select></label>
                         <label class="select-wrap" for="rightCamera"><span data-i18n="right">Right</span><select id="rightCamera" aria-label="Right camera" data-i18n-aria="rightCamera"></select></label>
                         <button class="icon-button ghost" id="refreshCameraList" type="button" aria-label="Refresh cameras" data-i18n-aria="refreshCameras" title="Refresh cameras" data-i18n-title="refreshCameras">
@@ -231,11 +232,11 @@
                 <div class="sources">
                     <article class="panel">
                         <div class="panel-head"><strong data-i18n="leftCameraLabel">Left camera</strong><span>INPUT 01</span></div>
-                        <div class="view"><video id="leftVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open left camera full screen" data-i18n-aria="openLeftFullscreen" title="Open full screen" data-i18n-title="openFullscreen"></video><canvas class="pose-overlay" id="leftPoseOverlay" hidden aria-hidden="true"></canvas><canvas class="pose-overlay" id="leftDetectionOverlay" hidden aria-hidden="true"></canvas><div class="placeholder" id="leftPlaceholder"><b data-i18n="awaitingCamera">Awaiting camera</b><span data-i18n="connectBeginCapture">Connect to begin capture</span></div><span class="camera-label" data-i18n="left">Left</span></div>
+                        <div class="view"><video id="leftVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open left camera full screen" data-i18n-aria="openLeftFullscreen" title="Open full screen" data-i18n-title="openFullscreen"></video><img class="docker-image" id="leftDockerImage" alt="Docker camera input" data-i18n-alt="dockerCameraInput" hidden tabindex="0" role="button"><canvas class="pose-overlay" id="leftPoseOverlay" hidden aria-hidden="true"></canvas><canvas class="pose-overlay" id="leftDetectionOverlay" hidden aria-hidden="true"></canvas><div class="placeholder" id="leftPlaceholder"><b data-i18n="awaitingCamera">Awaiting camera</b><span data-i18n="connectBeginCapture">Connect to begin capture</span></div><span class="camera-label" data-i18n="left">Left</span></div>
                     </article>
                     <article class="panel">
                         <div class="panel-head"><strong data-i18n="rightCameraLabel">Right camera</strong><span>INPUT 02</span></div>
-                        <div class="view"><video id="rightVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open right camera full screen" data-i18n-aria="openRightFullscreen" title="Open full screen" data-i18n-title="openFullscreen"></video><canvas class="pose-overlay" id="rightPoseOverlay" hidden aria-hidden="true"></canvas><div class="placeholder" id="rightPlaceholder"><b data-i18n="awaitingCamera">Awaiting camera</b><span data-i18n="connectBeginCapture">Connect to begin capture</span></div><span class="camera-label" data-i18n="right">Right</span></div>
+                        <div class="view"><video id="rightVideo" autoplay muted playsinline hidden tabindex="0" role="button" aria-label="Open right camera full screen" data-i18n-aria="openRightFullscreen" title="Open full screen" data-i18n-title="openFullscreen"></video><img class="docker-image" id="rightDockerImage" alt="Docker camera input" data-i18n-alt="dockerCameraInput" hidden tabindex="0" role="button"><canvas class="pose-overlay" id="rightPoseOverlay" hidden aria-hidden="true"></canvas><div class="placeholder" id="rightPlaceholder"><b data-i18n="awaitingCamera">Awaiting camera</b><span data-i18n="connectBeginCapture">Connect to begin capture</span></div><span class="camera-label" data-i18n="right">Right</span></div>
                     </article>
                 </div>
                 <article class="panel depth-panel">
@@ -395,8 +396,11 @@
     <script>
         const leftVideo = document.getElementById('leftVideo');
         const rightVideo = document.getElementById('rightVideo');
+        const leftDockerImage = document.getElementById('leftDockerImage');
+        const rightDockerImage = document.getElementById('rightDockerImage');
         const leftCamera = document.getElementById('leftCamera');
         const rightCamera = document.getElementById('rightCamera');
+        const stereoCaptureSource = document.getElementById('stereoCaptureSource');
         const toggleCapture = document.getElementById('toggleCapture');
         const refreshCameraList = document.getElementById('refreshCameraList');
         const advancedSettings = document.getElementById('advancedSettings');
@@ -435,6 +439,7 @@
             captureDisparity: ['Capture / disparity', 'Felvétel / parallaxis'], stereoMonitor: ['Stereo monitor', 'Sztereó monitor'], refreshCameras: ['Refresh cameras', 'Kamerák frissítése'], detailedSettings: ['Detailed settings', 'Részletes beállítások'],
             settingsTooltip: ['Tune stereo matching to improve depth-map detail, reduce noise, or adjust the color palette.', 'A sztereó illesztés finomhangolása a részletesebb mélységtérképért, a zaj csökkentéséért vagy a színpaletta módosításáért.'],
             left: ['Left', 'Bal'], right: ['Right', 'Jobb'], leftCamera: ['Left camera', 'Bal kamera'], rightCamera: ['Right camera', 'Jobb kamera'], connectCameras: ['Connect cameras', 'Kamerák csatlakoztatása'],
+            captureSource: ['Source', 'Forrás'], cameraSource: ['Camera source', 'Kamera forrása'], browserCameras: ['Browser cameras', 'Böngészőkamerák'], dockerCameras: ['Docker / Linux devices', 'Docker / Linux eszközök'], dockerCameraInput: ['Docker camera input', 'Docker kamera-bemenet'],
             workbenchLabel: ['Stereo camera feeds and depth output', 'Sztereó kameraképek és mélységtérkép'], leftCameraLabel: ['Left camera', 'Bal kamera'], rightCameraLabel: ['Right camera', 'Jobb kamera'],
             openLeftFullscreen: ['Open left camera full screen', 'Bal kamera megnyitása teljes képernyőn'], openRightFullscreen: ['Open right camera full screen', 'Jobb kamera megnyitása teljes képernyőn'], openFullscreen: ['Open full screen', 'Teljes képernyő megnyitása'],
             awaitingCamera: ['Awaiting camera', 'Várakozás a kamerára'], connectBeginCapture: ['Connect to begin capture', 'Csatlakozz a felvétel indításához'], disparityMap: ['Disparity map', 'Parallaxis-térkép'], disparityAlt: ['Live color-coded stereo disparity map', 'Valós idejű, színkódolt sztereó parallaxis-térkép'],
@@ -496,6 +501,11 @@
         let previewGeneration = 0;
         let streams = [];
         let capturing = false;
+        let dockerCapturing = false;
+        let captureSource = localStorage.getItem('stereoCameraSource') === 'docker' ? 'docker' : 'browser';
+        const stereoCameraClientId = crypto.randomUUID
+            ? crypto.randomUUID()
+            : `stereo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         let previousImageUrl = null;
         let selectedMeasurement = null;
         const calibrationRois = { left: null, right: null };
@@ -630,6 +640,45 @@
             else setNotice('chooseCameras');
         }
 
+        function fillDockerCameraLists(cameras) {
+            const previous = [leftCamera.value, rightCamera.value];
+            [leftCamera, rightCamera].forEach((select, index) => {
+                select.replaceChildren();
+                cameras.forEach(camera => {
+                    const option = document.createElement('option');
+                    option.value = String(camera.slot);
+                    option.textContent = `${camera.label} (/dev/video${camera.deviceIndex})`;
+                    select.append(option);
+                });
+                const preserved = cameras.some(camera => String(camera.slot) === previous[index]);
+                if (preserved) select.value = previous[index];
+                else if (cameras.length) select.selectedIndex = Math.min(index, cameras.length - 1);
+                select.disabled = cameras.length === 0;
+            });
+            if (cameras.length < 2) setNotice('oneCamera');
+            else setNotice('chooseCameras');
+        }
+
+        async function loadDockerCameras() {
+            const response = await fetch('/api/camera-settings');
+            const settings = await response.json();
+            if (!response.ok) throw new Error(settings.error || 'Could not load Docker camera settings.');
+            const cameras = settings.cameras.filter(camera => camera.active);
+            fillDockerCameraLists(cameras);
+            if (!cameras.length) throw new Error('Enable at least two cameras in Camera settings for Docker capture.');
+        }
+
+        function cameraFrame(side) {
+            if (captureSource === 'docker') return side === 'left' ? leftDockerImage : rightDockerImage;
+            return side === 'left' ? leftVideo : rightVideo;
+        }
+
+        function frameSize(source) {
+            return source instanceof HTMLVideoElement
+                ? { width: source.videoWidth, height: source.videoHeight }
+                : { width: source.naturalWidth, height: source.naturalHeight };
+        }
+
         function activeCameraTrack(side) {
             const video = side === 'left' ? leftVideo : rightVideo;
             return video.srcObject?.getVideoTracks()[0] || null;
@@ -656,6 +705,15 @@
             const deviceSelect = document.getElementById('hardwareDevice');
             const controls = document.getElementById('hardwareControls');
             const deviceIdReadout = document.getElementById('hardwareDeviceId');
+            if (captureSource === 'docker') {
+                document.getElementById('resetHardwareSettings').disabled = true;
+                deviceSelect.replaceChildren();
+                deviceSelect.disabled = true;
+                deviceIdReadout.textContent = '-';
+                controls.replaceChildren();
+                setHardwareStatus('hardwareUnsupported');
+                return;
+            }
             const track = activeCameraTrack(side);
             const video = side === 'left' ? leftVideo : rightVideo;
             const selectedId = track?.getSettings().deviceId || (side === 'left' ? leftCamera.value : rightCamera.value);
@@ -800,6 +858,7 @@
         }
 
         async function enumerateCameras() {
+            if (captureSource !== 'browser') return;
             const devices = await navigator.mediaDevices.enumerateDevices();
             const cameras = devices.filter(device => device.kind === 'videoinput');
             await reportDiagnostic('camera_enumeration_complete', {
@@ -817,6 +876,10 @@
         }
 
         async function refreshCameras() {
+            if (captureSource === 'docker') {
+                await loadDockerCameras();
+                return;
+            }
             if (!navigator.mediaDevices?.getUserMedia) {
                 throw new Error('Camera capture requires a secure browser context. Open this app at localhost or over HTTPS.');
             }
@@ -833,34 +896,41 @@
             const video = { width: { ideal: 640 }, height: { ideal: 480 } };
             if (deviceId) video.deviceId = { exact: deviceId };
             await reportDiagnostic('camera_open_requested', { camera: cameraName, constraints: video });
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
-                const tracks = stream.getVideoTracks();
-                tracks.forEach(track => {
-                    track.addEventListener('ended', () => reportDiagnostic('camera_track_ended', {
-                        camera: cameraName, track: describeTrack(track)
-                    }));
-                    track.addEventListener('mute', () => reportDiagnostic('camera_track_muted', {
-                        camera: cameraName, track: describeTrack(track)
-                    }));
-                    track.addEventListener('unmute', () => reportDiagnostic('camera_track_unmuted', {
-                        camera: cameraName, track: describeTrack(track)
-                    }));
-                });
-                await reportDiagnostic('camera_open_succeeded', {
-                    camera: cameraName,
-                    tracks: tracks.map(describeTrack)
-                });
-                return stream;
-            } catch (error) {
-                await reportDiagnostic('camera_open_failed', {
-                    camera: cameraName,
-                    errorName: error.name,
-                    errorMessage: error.message,
-                    constraints: error.constraint || null
-                });
-                throw error;
+            for (let attempt = 0; attempt < 2; attempt += 1) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+                    const tracks = stream.getVideoTracks();
+                    tracks.forEach(track => {
+                        track.addEventListener('ended', () => reportDiagnostic('camera_track_ended', {
+                            camera: cameraName, track: describeTrack(track)
+                        }));
+                        track.addEventListener('mute', () => reportDiagnostic('camera_track_muted', {
+                            camera: cameraName, track: describeTrack(track)
+                        }));
+                        track.addEventListener('unmute', () => reportDiagnostic('camera_track_unmuted', {
+                            camera: cameraName, track: describeTrack(track)
+                        }));
+                    });
+                    await reportDiagnostic('camera_open_succeeded', {
+                        camera: cameraName,
+                        tracks: tracks.map(describeTrack)
+                    });
+                    return stream;
+                } catch (error) {
+                    await reportDiagnostic('camera_open_failed', {
+                        camera: cameraName,
+                        errorName: error.name,
+                        errorMessage: error.message,
+                        constraints: error.constraint || null
+                    });
+                    if (attempt === 0 && ['AbortError', 'NotReadableError'].includes(error.name)) {
+                        await new Promise(resolve => setTimeout(resolve, 600));
+                        continue;
+                    }
+                    throw error;
+                }
             }
+            throw new Error(`Could not open ${cameraName}.`);
         }
 
         function stopCapture() {
@@ -869,10 +939,23 @@
             stopSettingsPreview();
             streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
             streams = [];
+            if (dockerCapturing) {
+                dockerCapturing = false;
+                fetch('/api/cameras/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ clientId: stereoCameraClientId }),
+                    keepalive: true
+                }).catch(error => console.warn('[Stereo Lab] Could not stop Docker camera capture:', error));
+            }
             leftVideo.srcObject = null;
             rightVideo.srcObject = null;
             leftVideo.hidden = true;
             rightVideo.hidden = true;
+            leftDockerImage.removeAttribute('src');
+            rightDockerImage.removeAttribute('src');
+            leftDockerImage.hidden = true;
+            rightDockerImage.hidden = true;
             document.getElementById('leftPlaceholder').hidden = false;
             document.getElementById('rightPlaceholder').hidden = false;
             depthImage.hidden = true;
@@ -887,6 +970,7 @@
             previousImageUrl = null;
             leftCamera.disabled = false;
             rightCamera.disabled = false;
+            stereoCaptureSource.disabled = false;
             refreshCameraList.disabled = false;
             toggleCapture.textContent = translate('connectCameras');
             processingState.dataset.i18n = 'ready';
@@ -895,11 +979,13 @@
             setNotice('cameraFeedsStopped');
         }
 
-        function canvasBlob(video) {
+        function canvasBlob(source) {
+            const { width, height } = frameSize(source);
+            if (!width || !height) return Promise.resolve(null);
             const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(source, 0, 0);
             return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
         }
 
@@ -934,10 +1020,11 @@
         }
 
         function drawCalibrationCamera(canvas, video, roi) {
-            if (!video.videoWidth || !video.videoHeight) return;
-            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
+            const { width, height } = frameSize(video);
+            if (!width || !height) return;
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
             }
             const context = canvas.getContext('2d');
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -982,8 +1069,8 @@
                 return;
             }
             if (timestamp - calibrationPreviewLastDraw >= 120) {
-                drawCalibrationCamera(calibrationLeftView, leftVideo, calibrationRois.left);
-                drawCalibrationCamera(calibrationRightView, rightVideo, calibrationRois.right);
+                drawCalibrationCamera(calibrationLeftView, cameraFrame('left'), calibrationRois.left);
+                drawCalibrationCamera(calibrationRightView, cameraFrame('right'), calibrationRois.right);
                 drawCalibrationComposite();
                 calibrationPreviewLastDraw = timestamp;
             }
@@ -1077,7 +1164,7 @@
 
         async function captureCalibrationView() {
             if (!capturing) throw new Error(translate('captureNeedsCameras'));
-            const [leftBlob, rightBlob] = await Promise.all([canvasBlob(leftVideo), canvasBlob(rightVideo)]);
+            const [leftBlob, rightBlob] = await Promise.all([canvasBlob(cameraFrame('left')), canvasBlob(cameraFrame('right'))]);
             if (!leftBlob || !rightBlob) throw new Error(translate('captureNeedsCameras'));
             const form = new FormData();
             form.append('left', leftBlob, 'left.jpg');
@@ -1185,13 +1272,13 @@
                 return;
             }
             lastPoseError = '';
-            const width = leftVideo.videoWidth;
-            const height = leftVideo.videoHeight;
+            const { width, height } = frameSize(cameraFrame('left'));
             if (poseData.view === 'left' || poseData.view === 'both') {
                 drawPoseOverlay(leftPoseOverlay, poseData.left, width, height);
             }
             if (poseData.view === 'right' || poseData.view === 'both') {
-                drawPoseOverlay(rightPoseOverlay, poseData.right, rightVideo.videoWidth, rightVideo.videoHeight);
+                const rightSize = frameSize(cameraFrame('right'));
+                drawPoseOverlay(rightPoseOverlay, poseData.right, rightSize.width, rightSize.height);
             }
             if (poseData.view === 'composite' || poseData.view === 'both') {
                 drawPoseOverlay(compositePoseOverlay, poseData.left, width, height, true);
@@ -1288,10 +1375,12 @@
             }
             lastDetectionError = '';
             if (detectionData.view === 'left' || detectionData.view === 'both') {
-                drawDetectionOverlay(leftDetectionOverlay, detectionData.objects, leftVideo.videoWidth, leftVideo.videoHeight);
+                const { width, height } = frameSize(cameraFrame('left'));
+                drawDetectionOverlay(leftDetectionOverlay, detectionData.objects, width, height);
             }
             if (detectionData.view === 'composite' || detectionData.view === 'both') {
-                drawDetectionOverlay(compositeDetectionOverlay, detectionData.objects, leftVideo.videoWidth, leftVideo.videoHeight, true);
+                const { width, height } = frameSize(cameraFrame('left'));
+                drawDetectionOverlay(compositeDetectionOverlay, detectionData.objects, width, height, true);
             }
         }
 
@@ -1411,7 +1500,7 @@
             button.disabled = true;
             setNotice('exportStarted');
             try {
-                const [leftBlob, rightBlob] = await Promise.all([canvasBlob(leftVideo), canvasBlob(rightVideo)]);
+                const [leftBlob, rightBlob] = await Promise.all([canvasBlob(cameraFrame('left')), canvasBlob(cameraFrame('right'))]);
                 if (!leftBlob || !rightBlob) throw new Error(translate('exportNeedsCameras'));
                 const form = new FormData();
                 form.append('left', leftBlob, 'left.jpg');
@@ -1454,7 +1543,7 @@
         async function runSettingsPreview(generation) {
             while (previewEnabled && generation === previewGeneration && advancedSettings.open && capturing) {
                 try {
-                    const [leftBlob, rightBlob] = await Promise.all([canvasBlob(leftVideo), canvasBlob(rightVideo)]);
+                    const [leftBlob, rightBlob] = await Promise.all([canvasBlob(cameraFrame('left')), canvasBlob(cameraFrame('right'))]);
                     if (!previewEnabled || generation !== previewGeneration) break;
                     if (!leftBlob || !rightBlob) {
                         await new Promise(resolve => setTimeout(resolve, 350));
@@ -1514,8 +1603,12 @@
 
         async function processFrames() {
             while (capturing) {
-                const [leftBlob, rightBlob] = await Promise.all([canvasBlob(leftVideo), canvasBlob(rightVideo)]);
+                const [leftBlob, rightBlob] = await Promise.all([canvasBlob(cameraFrame('left')), canvasBlob(cameraFrame('right'))]);
                 if (!capturing) break;
+                if (!leftBlob || !rightBlob) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    continue;
+                }
                 const form = new FormData();
                 form.append('left', leftBlob, 'left.jpg');
                 form.append('right', rightBlob, 'right.jpg');
@@ -1549,9 +1642,48 @@
                 if (previousImageUrl) URL.revokeObjectURL(previousImageUrl);
                 previousImageUrl = imageUrl;
                 processingState.removeAttribute('data-i18n');
-                processingState.textContent = `${leftVideo.videoWidth} × ${leftVideo.videoHeight} · ${stereoBackend}`;
+                const { width, height } = frameSize(cameraFrame('left'));
+                processingState.textContent = `${width} × ${height} · ${stereoBackend}`;
                 await new Promise(resolve => setTimeout(resolve, 120));
             }
+        }
+
+        async function waitForDockerFrame(image) {
+            const started = Date.now();
+            while (!image.naturalWidth && Date.now() - started < 45000) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            if (!image.naturalWidth) {
+                throw new Error('Docker camera did not produce a frame within 45 seconds. Check its /dev/video index and connection.');
+            }
+        }
+
+        async function startDockerCapture() {
+            const response = await fetch('/api/camera-settings');
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Could not load Docker camera settings.');
+            const selected = [leftCamera.value, rightCamera.value].map(Number);
+            const cameras = result.cameras.filter(camera => camera.active);
+            const left = cameras.find(camera => camera.slot === selected[0]);
+            const right = cameras.find(camera => camera.slot === selected[1]);
+            if (!left || !right) {
+                throw new Error('The selected Docker camera slot is not active. Enable it in Camera settings and refresh the camera list.');
+            }
+            const responseStart = await fetch('/api/cameras/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId: stereoCameraClientId })
+            });
+            const started = await responseStart.json();
+            if (!responseStart.ok) throw new Error(started.error || 'Could not start Docker camera capture.');
+            dockerCapturing = true;
+            leftDockerImage.src = `/api/cameras/${left.slot}/stream?start=${Date.now()}`;
+            rightDockerImage.src = `/api/cameras/${right.slot}/stream?start=${Date.now()}`;
+            await Promise.all([leftDockerImage, rightDockerImage].map(waitForDockerFrame));
+            leftDockerImage.hidden = false;
+            rightDockerImage.hidden = false;
+            leftVideo.hidden = true;
+            rightVideo.hidden = true;
         }
 
         async function startCapture() {
@@ -1560,24 +1692,31 @@
             await reportDiagnostic('camera_connect_clicked', {
                 leftCamera: leftName,
                 rightCamera: rightName,
-                sameDeviceId: leftCamera.value === rightCamera.value
+                sameDeviceId: leftCamera.value === rightCamera.value,
+                captureSource
             });
             if (!leftCamera.value || !rightCamera.value) throw new Error(translate('noAvailableCameras'));
             if (leftCamera.value === rightCamera.value) {
                 throw new Error(translate('chooseDifferentCamera'));
             }
-            const leftStream = await openCamera(leftCamera.value, leftName);
-            streams = [leftStream];
-            const rightStream = await openCamera(rightCamera.value, rightName);
-            streams.push(rightStream);
-            leftVideo.srcObject = leftStream;
-            rightVideo.srcObject = rightStream;
-            leftVideo.hidden = false;
-            rightVideo.hidden = false;
-            await Promise.all([leftVideo.play(), rightVideo.play()]);
-            await Promise.all([leftVideo, rightVideo].map(video => video.readyState >= 2
-                ? Promise.resolve()
-                : new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }))));
+            let leftStream = null;
+            let rightStream = null;
+            if (captureSource === 'docker') {
+                await startDockerCapture();
+            } else {
+                leftStream = await openCamera(leftCamera.value, leftName);
+                streams = [leftStream];
+                rightStream = await openCamera(rightCamera.value, rightName);
+                streams.push(rightStream);
+                leftVideo.srcObject = leftStream;
+                rightVideo.srcObject = rightStream;
+                leftVideo.hidden = false;
+                rightVideo.hidden = false;
+                await Promise.all([leftVideo.play(), rightVideo.play()]);
+                await Promise.all([leftVideo, rightVideo].map(video => video.readyState >= 2
+                    ? Promise.resolve()
+                    : new Promise(resolve => video.addEventListener('loadeddata', resolve, { once: true }))));
+            }
             document.getElementById('leftPlaceholder').hidden = true;
             document.getElementById('rightPlaceholder').hidden = true;
             leftCamera.disabled = true;
@@ -1592,10 +1731,11 @@
             processingState.dataset.i18n = 'processing';
             processingState.textContent = translate('processing');
             await reportDiagnostic('stereo_capture_started', {
-                leftVideo: { width: leftVideo.videoWidth, height: leftVideo.videoHeight },
-                rightVideo: { width: rightVideo.videoWidth, height: rightVideo.videoHeight },
-                leftTracks: leftStream.getVideoTracks().map(describeTrack),
-                rightTracks: rightStream.getVideoTracks().map(describeTrack)
+                captureSource,
+                leftFrame: frameSize(cameraFrame('left')),
+                rightFrame: frameSize(cameraFrame('right')),
+                leftTracks: leftStream?.getVideoTracks().map(describeTrack) || [],
+                rightTracks: rightStream?.getVideoTracks().map(describeTrack) || []
             });
             processFrames().catch(error => {
                 reportDiagnostic('frame_processing_failed', {
@@ -1666,6 +1806,7 @@
                 return;
             }
             toggleCapture.disabled = true;
+            stereoCaptureSource.disabled = true;
             try {
                 await startCapture();
             } catch (error) {
@@ -1673,12 +1814,14 @@
                     errorName: error.name,
                     errorMessage: error.message
                 });
+                stopCapture();
                 streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
                 streams = [];
                 setStatus('error', 'cameraUnavailable');
                 setNotice(error.message);
             } finally {
                 toggleCapture.disabled = false;
+                stereoCaptureSource.disabled = capturing;
             }
         });
         refreshCameraList.addEventListener('click', async () => {
@@ -1692,13 +1835,14 @@
             }
         });
         navigator.mediaDevices?.addEventListener('devicechange', () => {
+            if (captureSource !== 'browser') return;
             enumerateCameras().catch(error => reportDiagnostic('camera_refresh_failed', {
                 errorName: error.name,
                 errorMessage: error.message
             }));
         });
 
-        [leftVideo, rightVideo, depthImage].forEach(source => {
+        [leftVideo, rightVideo, leftDockerImage, rightDockerImage, depthImage].forEach(source => {
             source.addEventListener('click', () => toggleFullscreen(source));
             source.addEventListener('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -1721,6 +1865,32 @@
             drawMeasurementMarker();
         });
         measurementOverlay.addEventListener('dblclick', () => toggleFullscreen(measurementOverlay));
+        stereoCaptureSource.value = captureSource;
+        stereoCaptureSource.addEventListener('change', async () => {
+            if (capturing || dockerCapturing) stopCapture();
+            captureSource = stereoCaptureSource.value;
+            localStorage.setItem('stereoCameraSource', captureSource);
+            leftVideo.hidden = true;
+            rightVideo.hidden = true;
+            leftDockerImage.hidden = true;
+            rightDockerImage.hidden = true;
+            try {
+                await refreshCameras();
+            } catch (error) {
+                setNotice(error.message);
+            }
+        });
+        document.addEventListener('camera-settings-saved', async event => {
+            if (capturing || dockerCapturing) stopCapture();
+            captureSource = event.detail.captureSource
+                || (localStorage.getItem('stereoCameraSource') === 'docker' ? 'docker' : 'browser');
+            stereoCaptureSource.value = captureSource;
+            try {
+                await refreshCameras();
+            } catch (error) {
+                setNotice(error.message);
+            }
+        });
         integerSettings.forEach(name => document.getElementById(name).addEventListener('input', syncSettingOutputs));
         document.querySelectorAll('[data-language]').forEach(button => button.addEventListener('click', () => {
             language = button.dataset.language;

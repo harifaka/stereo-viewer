@@ -102,9 +102,11 @@ def detect_available_cameras():
             capture = cv2.VideoCapture(device_index, cv2.CAP_V4L2)
             if not capture.isOpened():
                 continue
-            success, frame = capture.read()
-            if success and frame is not None:
-                available.append(device_index)
+            for _ in range(5):
+                success, frame = capture.read()
+                if success and frame is not None:
+                    available.append(device_index)
+                    break
         except cv2.error:
             app.logger.exception('Could not probe camera device %s.', device_path)
         finally:
@@ -263,48 +265,55 @@ class CameraStream:
             return self._raw_frame.copy()
 
     def _capture(self):
-        capture = None
         try:
-            capture = cv2.VideoCapture(self.device_index)
-            if not capture.isOpened():
-                device_path = f'/dev/video{self.device_index}'
-                if os.path.exists(device_path):
-                    app.logger.warning(
-                        'Could not open %s although the device exists. It may be busy; '
-                        'Disable camera permissions in the browser settings for this site.',
-                        device_path,
-                    )
-                raise RuntimeError(f'Could not open /dev/video{self.device_index}.')
-            with self._condition:
-                self._state = 'connected'
-                self._condition.notify_all()
+            retry = 0
             while not self._stop_event.is_set():
-                success, frame = capture.read()
-                if not success:
-                    raise RuntimeError(f'Could not read from /dev/video{self.device_index}.')
-                encoded, buffer = cv2.imencode('.jpg', frame)
-                if not encoded:
-                    raise RuntimeError(f'Could not encode a frame from /dev/video{self.device_index}.')
-                with self._condition:
-                    self._frame = buffer.tobytes()
-                    self._raw_frame = frame.copy()
-                    self._condition.notify_all()
-        except Exception as error:
-            with self._condition:
-                self._state = 'error'
-                self._error = str(error)
-                self._condition.notify_all()
-            app.logger.exception(
-                'Camera slot %s failed for /dev/video%s',
-                self.slot,
-                self.device_index,
-            )
+                capture = None
+                try:
+                    capture = cv2.VideoCapture(self.device_index, cv2.CAP_V4L2)
+                    if not capture.isOpened():
+                        raise RuntimeError(f'Could not open /dev/video{self.device_index}.')
+                    while not self._stop_event.is_set():
+                        success, frame = capture.read()
+                        if not success or frame is None:
+                            raise RuntimeError(f'Could not read from /dev/video{self.device_index}.')
+                        encoded, buffer = cv2.imencode('.jpg', frame)
+                        if not encoded:
+                            raise RuntimeError(f'Could not encode a frame from /dev/video{self.device_index}.')
+                        with self._condition:
+                            self._state = 'connected'
+                            self._error = None
+                            retry = 0
+                            self._frame = buffer.tobytes()
+                            self._raw_frame = frame.copy()
+                            self._condition.notify_all()
+                except Exception as error:
+                    retry += 1
+                    with self._condition:
+                        self._state = 'reconnecting'
+                        self._error = str(error)
+                        self._condition.notify_all()
+                    if retry == 1 or retry % 5 == 0:
+                        delay = min(0.5 * (2 ** min(retry - 1, 4)), 8)
+                        app.logger.warning(
+                            'Camera slot %s cannot open /dev/video%s (%s); retry %s in %.1f seconds.',
+                            self.slot,
+                            self.device_index,
+                            error,
+                            retry,
+                            delay,
+                        )
+                finally:
+                    if capture is not None:
+                        capture.release()
+                if self._stop_event.is_set():
+                    break
+                delay = min(0.5 * (2 ** min(retry - 1, 4)), 8)
+                if self._stop_event.wait(delay):
+                    break
         finally:
-            if capture is not None:
-                capture.release()
             with self._condition:
-                if self._state != 'error':
-                    self._state = 'disconnected'
+                self._state = 'disconnected'
                 self._condition.notify_all()
 
 
