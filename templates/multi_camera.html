@@ -4,158 +4,141 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Multi-Camera Monitor - Stereo Lab</title>
+    <meta name="theme-color" content="#121513">
+    {% include "_theme.html" %}
     <style>
-        :root {
-            color-scheme: dark;
-            --page: #171a18;
-            --panel: #202522;
-            --line: #39413b;
-            --text: #f0f2ed;
-            --muted: #9da79f;
-            --accent: #c7f36b;
-            --danger: #ff9b88;
-            font-family: "Bahnschrift", "Segoe UI Variable", "Segoe UI", sans-serif;
-        }
-        * { box-sizing: border-box; }
-        body { margin: 0; min-height: 100vh; color: var(--text); background: var(--page); }
-        button, select, input { font: inherit; }
-        .shell { display: flex; min-height: 100vh; flex-direction: column; padding: 18px 22px; }
-        header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
-        h1 { margin: 0; font-size: 21px; font-weight: 650; }
-        .subtitle { margin-top: 4px; color: var(--muted); font-size: 12px; }
-        .header-actions, .language-tools { display: flex; align-items: center; gap: 9px; }
-        .language-switch { display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 4px; }
-        .language-switch button { min-width: 38px; min-height: 34px; border: 0; color: var(--muted); background: var(--panel); cursor: pointer; font-size: 11px; font-weight: 700; }
-        .language-switch button[aria-pressed="true"] { color: #1c2414; background: var(--accent); }
-        .page-nav { display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
-        .page-nav a { padding: 8px 12px; border-radius: 3px; color: var(--muted); font-size: 12px; font-weight: 650; text-decoration: none; white-space: nowrap; }
-        .page-nav a:hover { color: var(--text); background: #262c28; }
-        .page-nav a[aria-current="page"] { color: #1c2414; background: var(--accent); }
-        .action-button, .icon-button { min-height: 38px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--panel); cursor: pointer; }
-        .action-button { padding: 0 13px; font-weight: 650; }
-        .action-button.primary { border-color: var(--accent); color: #1c2414; background: var(--accent); }
-        .icon-button { display: grid; width: 38px; place-items: center; padding: 0; }
-        .icon-button svg { width: 17px; height: 17px; }
-        button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-        .action-button:hover:not(:disabled), .icon-button:hover { filter: brightness(1.1); }
-        .action-button:disabled { cursor: wait; opacity: .55; }
-        .status { display: flex; align-items: center; gap: 8px; min-width: 110px; color: var(--muted); font-size: 12px; }
-        .status::before { width: 8px; height: 8px; border-radius: 50%; background: #707a72; content: ""; }
-        .status[data-state="live"]::before { background: var(--accent); box-shadow: 0 0 12px #c7f36b80; }
-        .status[data-state="error"] { color: var(--danger); }
-        .status[data-state="error"]::before { background: var(--danger); }
-        main { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 12px; padding-top: 12px; }
-        .notice { min-height: 18px; color: var(--muted); font-size: 12px; }
-        .camera-grid { display: grid; min-height: 380px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); grid-auto-rows: minmax(220px, 1fr); gap: 12px; }
-        .camera-card { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
-        .camera-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
-        .camera-head h2 { margin: 0; font-size: 13px; font-weight: 650; }
-        .camera-state { color: var(--muted); font-size: 10px; text-transform: uppercase; }
-        .camera-card[data-live="true"] .camera-state { color: var(--accent); }
-        .feed { position: relative; display: grid; min-height: 0; flex: 1; place-items: center; overflow: hidden; background: #090b09; }
+        .shell { display: flex; min-height: calc(100vh - var(--app-bar-height)); flex-direction: column; max-width: 1560px; margin: 0 auto; padding: 22px clamp(14px, 3vw, 40px) 40px; }
+        main { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 16px; }
+        .toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px 20px; }
+        .title-block h2 { margin: 4px 0 2px; font-size: 26px; font-weight: 650; letter-spacing: -.3px; }
+        .subtitle { color: var(--muted); font-size: 13px; }
+        .notice { display: flex; align-items: center; gap: 8px; min-height: 18px; color: var(--muted); font-size: 13px; }
+        .notice:not(:empty)::before { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--subtle); content: ""; }
+        .camera-grid { display: grid; min-height: 380px; flex: 1; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); grid-auto-rows: minmax(240px, 1fr); gap: 14px; }
+        .camera-card { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); transition: border-color .2s; }
+        .camera-card[data-live="true"] { border-color: #c7f36b55; }
+        .camera-card[data-active="false"] { opacity: .65; }
+        .camera-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 46px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+        .camera-head h2 { margin: 0; overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+        .camera-state { flex: none; max-width: 60%; padding: 3px 9px; overflow: hidden; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .5px; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+        .camera-card[data-live="true"] .camera-state { border-color: #c7f36b55; color: var(--accent); background: var(--accent-soft); }
+        .feed { position: relative; display: grid; min-height: 0; flex: 1; place-items: center; overflow: hidden; background-color: #0d100e; background-image: radial-gradient(#ffffff0a 1px, transparent 1px); background-size: 18px 18px; }
         .feed img, .feed video { display: block; width: 100%; height: 100%; object-fit: contain; }
         .feed img[hidden], .feed video[hidden] { display: none; }
-        .placeholder { display: grid; gap: 6px; padding: 12px; color: var(--muted); text-align: center; }
+        .placeholder { display: grid; justify-items: center; gap: 6px; padding: 12px; color: var(--subtle); text-align: center; }
+        .placeholder::before { display: block; width: 44px; height: 44px; margin-bottom: 6px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--panel-sunken) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236f7a71' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5-3v10l-5-3z'/%3E%3Crect x='3' y='6' width='12' height='12' rx='2'/%3E%3C/svg%3E") center / 22px no-repeat; content: ""; }
         .placeholder[hidden] { display: none; }
         .placeholder strong { color: #c3cdc4; font-size: 13px; font-weight: 600; }
-        .placeholder span { font-size: 11px; }
-        .processing-panel, .charuco-panel, .tap-panel { border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
-        .processing-panel { display: grid; gap: 12px; padding: 12px; }
-        .processing-controls, .charuco-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; }
-        .processing-controls label, .charuco-controls label, .tap-option { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
-        .processing-controls select, .processing-controls input, .charuco-controls input, .charuco-controls select { min-height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
-        .mode-options { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+        .placeholder span { font-size: 12px; }
+
+        .tool-panel { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); }
+        .tool-panel-head, .tool-panel > summary { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 16px; font-size: 14px; font-weight: 650; }
+        .tool-panel-icon { display: grid; flex: none; width: 30px; height: 30px; place-items: center; border-radius: 9px; color: var(--accent); background: var(--accent-soft); }
+        .tool-panel-icon svg { width: 16px; height: 16px; }
+        .tool-panel > summary { list-style: none; cursor: pointer; transition: background-color .15s; }
+        .tool-panel > summary::-webkit-details-marker { display: none; }
+        .tool-panel > summary:hover { background: #ffffff05; }
+        .tool-panel > summary::after { width: 18px; height: 18px; margin-left: auto; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2397a299' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat; content: ""; transition: transform .2s var(--ease); }
+        .tool-panel[open] > summary { border-bottom: 1px solid var(--line); }
+        .tool-panel[open] > summary::after { transform: rotate(180deg); }
+        .processing-panel { display: grid; }
+        .processing-panel .tool-panel-head { border-bottom: 1px solid var(--line); }
+        .processing-body { display: grid; gap: 14px; padding: 16px; }
+        .processing-controls, .charuco-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 16px; }
+        .charuco-controls { padding: 16px; }
+        .processing-controls label, .charuco-controls label, .tap-field { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 550; }
+        .processing-controls select, .processing-controls input[type="number"], .charuco-controls input, .charuco-controls select, .tap-field select, .tap-field input { min-width: 140px; }
+        .charuco-controls input[type="number"], .tap-field input[type="number"], .processing-controls input[type="number"] { width: 120px; min-width: 0; }
+        .mode-options { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; padding-left: 16px; border-left: 1px solid var(--line); }
         .mode-options[hidden] { display: none; }
-        .thermal-slots { display: flex; flex-wrap: wrap; gap: 8px 12px; }
-        .check-option { display: inline-flex; align-items: center; gap: 6px; }
+        .mode-options > div { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 550; }
+        .thermal-slots { display: flex; flex-wrap: wrap; gap: 8px; }
+        .check-option, .tap-option { display: inline-flex !important; align-items: center; gap: 8px; min-height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text) !important; background: var(--panel-sunken); cursor: pointer; font-size: 12px; font-weight: 550; }
+        .check-option:has(input:checked), .tap-option:has(input:checked) { border-color: #c7f36b55; }
+        #saveProcessingSettings { margin-left: auto; }
         .processing-output { display: grid; gap: 8px; }
         .processing-output[hidden] { display: none; }
-        a.action-button { display: inline-flex; align-items: center; text-decoration: none; }
-        .processing-output img { display: block; width: 100%; max-height: 420px; object-fit: contain; background: #090b09; border-radius: 4px; }
+        .processing-output img { display: block; width: 100%; max-height: 460px; object-fit: contain; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #090b09; }
         .processing-output img[hidden] { display: none; }
-        .charuco-panel { padding: 0 12px 12px; }
-        .charuco-panel summary { padding: 10px 0; cursor: pointer; font-size: 12px; font-weight: 650; }
-        .charuco-note { flex: 1 1 240px; margin: 0; color: var(--muted); font-size: 11px; }
+        .charuco-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; padding-top: 14px; border-top: 1px solid var(--line); }
+        .charuco-note { flex: 1 1 100%; margin: 0; color: var(--muted); font-size: 12px; }
+        .charuco-note:empty { display: none; }
         .charuco-note a { color: var(--accent); }
-        .tap-panel summary { padding: 10px 12px; cursor: pointer; font-size: 12px; font-weight: 650; }
-        .tap-content { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 0 12px 11px; }
-        .tap-option { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
-        .tap-option input { accent-color: var(--accent); }
-        .tap-status { flex: 1 1 280px; margin: 0; color: var(--muted); font-size: 10px; }
+        .tap-content { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 16px; padding: 16px; }
+        .tap-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
+        .tap-status { flex: 1 1 280px; margin: 0; color: var(--muted); font-size: 12px; }
         .tap-status[data-state="error"] { color: var(--danger); }
-        #tapCameraTargets { display: flex; flex-wrap: wrap; gap: 10px; }
-        .tap-field { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
-        .tap-field select, .tap-field input { min-height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
-        .tap-output { padding: 0 12px 12px; }
-        .tap-output img { display: block; width: 100%; max-height: 72vh; object-fit: contain; border: 1px solid var(--line); border-radius: 4px; background: #111412; }
+        #tapCameraTargets { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tap-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; width: 100%; padding-top: 14px; border-top: 1px solid var(--line); }
+        .tap-footer .action-button { margin-left: auto; }
+        .tap-output { padding: 0 16px 16px; }
+        .tap-output img { display: block; width: 100%; max-height: 72vh; object-fit: contain; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #0d100e; }
         .tap-output img[hidden] { display: none; }
-        .camera-settings-dialog { width: min(760px, calc(100vw - 28px)); max-height: 90vh; padding: 0; overflow: auto; border: 1px solid #536052; border-radius: 6px; color: var(--text); background: var(--panel); }
-        .camera-settings-dialog::backdrop { background: #080a08c9; backdrop-filter: blur(3px); }
-        .camera-settings-form { padding: 22px; }
-        .camera-settings-heading { display: flex; justify-content: space-between; gap: 18px; }
-        .camera-settings-heading h2 { margin: 5px 0 8px; font-size: 20px; }
-        .camera-settings-heading p { max-width: 620px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-        .camera-settings-kicker { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
-        .camera-settings-source-label { display: block; margin-top: 14px; color: var(--muted); font-size: 11px; }
-        .camera-settings-source { width: min(100%, 320px); min-height: 36px; margin-top: 5px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
-        .camera-settings-close { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; font-size: 22px; }
-        .camera-settings-table-wrap { margin-top: 20px; overflow-x: auto; }
-        .camera-settings-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        .camera-settings-table th, .camera-settings-table td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; }
-        .camera-settings-table thead th { color: var(--muted); font-size: 10px; font-weight: 650; }
-        .camera-settings-table th[scope="row"] { white-space: nowrap; }
-        .camera-settings-table input[type="text"], .camera-settings-table select { width: 100%; min-height: 36px; padding: 0 9px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
-        .camera-settings-table input[type="checkbox"] { accent-color: var(--accent); }
-        .camera-settings-active { width: 62px; text-align: center !important; }
-        .camera-settings-message { min-height: 18px; margin: 12px 0 0; color: var(--muted); font-size: 11px; }
-        .camera-settings-message[data-state="error"] { color: var(--danger); }
-        .camera-settings-toolbar { display: flex; margin-top: 12px; }
-        .camera-settings-add, .camera-settings-remove { min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; }
-        .camera-settings-remove:disabled { cursor: not-allowed; opacity: .4; }
-        .camera-settings-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 10px; }
-        .camera-settings-actions button { min-height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; }
-        .camera-settings-actions .camera-settings-primary { border-color: var(--accent); color: #1c2414; background: var(--accent); font-weight: 700; }
         @media (max-width: 900px) {
-            .shell { padding: 12px; }
-            header { align-items: flex-start; flex-direction: column; }
-            .header-actions { width: 100%; flex-wrap: wrap; }
             .camera-grid { min-height: 0; grid-template-columns: 1fr; grid-template-rows: auto; }
             .camera-card { min-height: 300px; }
+            .mode-options { padding-left: 0; border-left: 0; }
+            #saveProcessingSettings { margin-left: 0; }
+        }
+        @media (max-width: 620px) {
+            .shell { padding: 16px 12px 32px; }
+            .toolbar > .action-button { width: 100%; }
+            .processing-controls > *, .charuco-controls > label, .tap-field { flex: 1 1 100%; }
+            .processing-controls select, .charuco-controls select, .tap-field select, .charuco-controls input[type="number"], .tap-field input[type="number"], .processing-controls input[type="number"] { width: 100%; }
+            .charuco-actions .action-button, .tap-footer .action-button { flex: 1 1 auto; }
         }
     </style>
 </head>
 <body>
-    <div class="shell">
-        <header>
-            <div>
-                <h1 data-copy="title">Multi-Camera Monitor</h1>
-                <div class="subtitle" data-copy="subtitle">Concurrent preview for 1 to 16 cameras</div>
-            </div>
+    <header class="app-bar">
+        <div class="app-bar-inner">
+            <a class="brand" href="/">
+                <div class="brand-mark" aria-hidden="true">SV</div>
+                <div class="brand-copy"><h1>Stereo Lab</h1><div class="eyebrow" data-copy="subtitle">Concurrent preview for 1 to 16 cameras</div></div>
+            </a>
             <nav class="page-nav" aria-label="Pages" data-copy-aria="pageNavigation">
-                <a href="/" data-copy="stereoPage">Stereo monitor</a>
-                <a href="/multi-camera" aria-current="page" data-copy="multiCameraPage">Multi-camera monitor</a>
+                <a href="/">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="12" r="4"/><circle cx="16.5" cy="12" r="4"/></svg>
+                    <span data-copy="stereoPage">Stereo monitor</span>
+                </a>
+                <a href="/multi-camera" aria-current="page">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
+                    <span data-copy="multiCameraPage">Multi-camera monitor</span>
+                </a>
             </nav>
-            <div class="header-actions">
-                <div class="language-tools">
-                    <div class="language-switch" role="group" aria-label="Language">
-                        <button type="button" data-language="en">EN</button>
-                        <button type="button" data-language="hu">HU</button>
-                    </div>
-                    <button class="icon-button" type="button" data-camera-settings-open aria-label="Camera settings" title="Camera settings">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                            <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
-                            <path d="m19.4 13.5 1.1.9-1.4 2.4-1.4-.5a7.7 7.7 0 0 1-1.6.9l-.3 1.5h-2.8l-.3-1.5a7.7 7.7 0 0 1-1.6-.9l-1.4.5-1.4-2.4 1.1-.9a7.8 7.8 0 0 1 0-1.8l-1.1-.9 1.4-2.4 1.4.5a7.7 7.7 0 0 1 1.6-.9l.3-1.5h2.8l.3 1.5a7.7 7.7 0 0 1 1.6.9l1.4-.5 1.4 2.4-1.1.9a7.8 7.8 0 0 1 0 1.8Z"/>
-                        </svg>
-                    </button>
+            <div class="header-tools">
+                <span class="status dot-before" id="captureStatus" data-state="idle" role="status" data-copy="disconnected">Disconnected</span>
+                <span class="header-divider" aria-hidden="true"></span>
+                <div class="language-switch" role="group" aria-label="Language">
+                    <button type="button" data-language="en">EN</button>
+                    <button type="button" data-language="hu">HU</button>
                 </div>
-                <span class="status" id="captureStatus" data-state="idle" role="status" data-copy="disconnected">Disconnected</span>
+                <button class="icon-button" type="button" data-camera-settings-open aria-label="Camera settings" title="Camera settings">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/>
+                        <path d="m19.4 13.5 1.1.9-1.4 2.4-1.4-.5a7.7 7.7 0 0 1-1.6.9l-.3 1.5h-2.8l-.3-1.5a7.7 7.7 0 0 1-1.6-.9l-1.4.5-1.4-2.4 1.1-.9a7.8 7.8 0 0 1 0-1.8l-1.1-.9 1.4-2.4 1.4.5a7.7 7.7 0 0 1 1.6-.9l.3-1.5h2.8l.3 1.5a7.7 7.7 0 0 1 1.6.9l1.4-.5 1.4 2.4-1.1.9a7.8 7.8 0 0 1 0 1.8Z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+    <div class="shell">
+        <main>
+            <div class="toolbar">
+                <div class="title-block">
+                    <div class="section-kicker" data-copy="liveGrid">Live grid</div>
+                    <h2 data-copy="title">Multi-Camera Monitor</h2>
+                    <div class="notice" id="notice" role="status" aria-live="polite" data-copy="choose">Configure camera labels and active devices, then connect. Each enabled Linux camera is captured independently by the server.</div>
+                </div>
                 <button class="action-button primary" id="toggleCapture" type="button" data-copy="connect">Connect active cameras</button>
             </div>
-        </header>
-        <main>
-            <div class="notice" id="notice" role="status" aria-live="polite" data-copy="choose">Configure camera labels and active devices, then connect. Each enabled Linux camera is captured independently by the server.</div>
             <section class="camera-grid" id="cameraGrid" aria-label="Multi-camera live feeds"></section>
-            <section class="processing-panel" aria-label="Processing">
+            <section class="tool-panel processing-panel" aria-label="Processing">
+                <div class="tool-panel-head">
+                    <span class="tool-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg></span>
+                    <span data-copy="processingTitle">Processing</span>
+                </div>
+                <div class="processing-body">
                 <div class="processing-controls">
                     <label><span data-copy="processingMode">Processing mode</span>
                         <select id="processingMode">
@@ -212,9 +195,13 @@
                     <img id="processingOutput" alt="Multi-camera processing output" hidden>
                 </div>
                 <p class="notice" id="processingStatus" role="status" aria-live="polite"></p>
+                </div>
             </section>
-            <details class="charuco-panel">
-                <summary data-copy="charucoTitle">ChArUco global calibration</summary>
+            <details class="tool-panel charuco-panel">
+                <summary>
+                    <span class="tool-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></span>
+                    <span data-copy="charucoTitle">ChArUco global calibration</span>
+                </summary>
                 <div class="charuco-controls">
                     <label><span data-copy="squaresX">Squares X</span><input id="charucoSquaresX" type="number" min="3" max="8" step="1" value="5"></label>
                     <label><span data-copy="squaresY">Squares Y</span><input id="charucoSquaresY" type="number" min="3" max="8" step="1" value="7"></label>
@@ -222,19 +209,28 @@
                     <label><span data-copy="markerSize">Marker size (mm)</span><input id="charucoMarkerSize" type="number" min="4" max="200" step="1" value="22"></label>
                     <label><span data-copy="charucoReference">Reference camera</span><select id="charucoReference" data-slot-select></select></label>
                     <button class="action-button" id="saveCharucoBoard" type="button" data-copy="saveBoard">Save board</button>
-                    <a class="action-button" id="openCharucoBoard" href="/charuco-board.png" target="_blank" rel="noopener" data-copy="openBoard">Open board</a>
-                    <button class="action-button" id="captureCharuco" type="button" data-copy="captureBoard">Capture board view</button>
-                    <button class="action-button primary" id="calibrateCharuco" type="button" data-copy="calibrateCameras">Calibrate cameras</button>
-                    <button class="action-button" id="resetCharuco" type="button" data-copy="resetCalibration">Reset calibration</button>
+                    <div class="charuco-actions">
+                        <a class="action-button" id="openCharucoBoard" href="/charuco-board.png" target="_blank" rel="noopener" data-copy="openBoard">Open board</a>
+                        <button class="action-button" id="captureCharuco" type="button" data-copy="captureBoard">Capture board view</button>
+                        <button class="action-button primary" id="calibrateCharuco" type="button" data-copy="calibrateCameras">Calibrate cameras</button>
+                        <button class="action-button danger" id="resetCharuco" type="button" data-copy="resetCalibration">Reset calibration</button>
+                    </div>
                     <p class="charuco-note" id="charucoStatus" role="status"></p>
                 </div>
             </details>
-            <details class="tap-panel">
-                <summary data-copy="tapTitle">TAP-Net temporal tracking</summary>
+            <details class="tool-panel tap-panel">
+                <summary>
+                    <span class="tool-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg></span>
+                    <span data-copy="tapTitle">TAP-Net temporal tracking</span>
+                </summary>
                 <form class="tap-content" id="tapForm">
-                    <label class="tap-option"><input id="tapEnabled" type="checkbox"><span data-copy="tapEnable">Enable live temporal point tracking</span></label>
-                    <span id="tapCameraTargets"></span>
-                    <label class="tap-option"><input id="tapComposite" type="checkbox"><span data-copy="composite">Composite output</span></label>
+                    <div class="tap-row">
+                        <label class="tap-option"><input id="tapEnabled" type="checkbox"><span data-copy="tapEnable">Enable live temporal point tracking</span></label>
+                    </div>
+                    <div class="tap-row">
+                        <span id="tapCameraTargets"></span>
+                        <label class="tap-option"><input id="tapComposite" type="checkbox"><span data-copy="composite">Composite output</span></label>
+                    </div>
                     <label class="tap-field"><span data-copy="tapBackend">Tracker</span>
                         <select id="tapBackend">
                             <option value="auto" data-copy="tapBackendAuto">Automatic (TAPIR if installed)</option>
@@ -244,8 +240,10 @@
                     </label>
                     <label class="tap-field"><span data-copy="tapMaxPoints">Points per target</span><input id="tapMaxPoints" type="number" min="8" max="200" step="1" value="80"></label>
                     <label class="tap-field"><span data-copy="tapHoldFrames">Occlusion hold (frames)</span><input id="tapHoldFrames" type="number" min="0" max="60" step="1" value="12"></label>
-                    <p class="tap-status" id="tapStatus" role="status" aria-live="polite"></p>
-                    <button class="action-button" id="saveTapSettings" type="submit" data-copy="saveTap">Save tracking targets</button>
+                    <div class="tap-footer">
+                        <p class="tap-status" id="tapStatus" role="status" aria-live="polite"></p>
+                        <button class="action-button primary" id="saveTapSettings" type="submit" data-copy="saveTap">Save tracking targets</button>
+                    </div>
                 </form>
                 <div class="tap-output"><img id="tapOutput" alt="Temporal point tracking output" hidden></div>
             </details>
@@ -256,6 +254,7 @@
         const copy = {
             en: {
                 title: 'Multi-Camera Monitor', subtitle: 'Concurrent preview for 1 to 16 cameras',
+                liveGrid: 'Live grid', processingTitle: 'Processing',
                 processingMode: 'Processing mode', modePreview: 'Preview', modeMvs: 'Multi-view stereo',
                 modeThermal: 'Thermal fusion', modeThermalStereo: 'Thermal stereo', modeSlam: 'Visual SLAM',
                 referenceCamera: 'Reference camera', detector: 'Feature detector', rgbCamera: 'RGB camera',
@@ -292,6 +291,7 @@
             },
             hu: {
                 title: 'Többkamerás monitor', subtitle: 'Párhuzamos előnézet 1–16 kamerához',
+                liveGrid: 'Élő rács', processingTitle: 'Feldolgozás',
                 processingMode: 'Feldolgozási mód', modePreview: 'Előnézet', modeMvs: 'Többnézetű sztereó',
                 modeThermal: 'Hőképes összeillesztés', modeThermalStereo: 'Hőképes sztereó', modeSlam: 'Vizuális SLAM',
                 referenceCamera: 'Referenciakamera', detector: 'Jellemződetektor', rgbCamera: 'RGB kamera',

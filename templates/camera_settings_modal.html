@@ -5,35 +5,46 @@
                 <div class="camera-settings-kicker" data-camera-settings-copy="kicker">Camera setup</div>
                 <h2 id="cameraSettingsTitle" data-camera-settings-copy="title">Camera source and mapping</h2>
                 <p data-camera-settings-copy="intro">Choose a capture source for this browser. Camera labels, indexes, and Active settings are shared by the server.</p>
+            </div>
+            <button class="camera-settings-close" type="button" data-camera-settings-close data-camera-settings-aria="close" aria-label="Close camera settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            </button>
+        </div>
+        <div class="camera-settings-body">
+            <div class="camera-settings-source-row">
                 <label class="camera-settings-source-label" for="cameraCaptureSource" data-camera-settings-copy="source">Capture source</label>
                 <select class="camera-settings-source" id="cameraCaptureSource">
                     <option value="browser" data-camera-settings-copy="browserSource">Browser cameras</option>
                     <option value="docker" data-camera-settings-copy="dockerSource">Docker / Linux devices</option>
                 </select>
             </div>
-            <button class="camera-settings-close" type="button" data-camera-settings-close aria-label="Close camera settings">×</button>
+            <div class="camera-settings-table-wrap">
+                <table class="camera-settings-table">
+                    <thead>
+                        <tr>
+                            <th scope="col" data-camera-settings-copy="slot">Slot</th>
+                            <th scope="col" data-camera-settings-copy="device">Camera index</th>
+                            <th scope="col" data-camera-settings-copy="label">Custom label / role</th>
+                            <th scope="col" data-camera-settings-copy="active">Active</th>
+                            <th scope="col"><span class="sr-only" data-camera-settings-copy="remove">Remove</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="cameraSettingsRows"></tbody>
+                </table>
+            </div>
+            <div class="camera-settings-toolbar">
+                <button class="camera-settings-add" type="button" id="addCameraSlot">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                    <span data-camera-settings-copy="addCamera">Add camera</span>
+                </button>
+            </div>
         </div>
-        <div class="camera-settings-table-wrap">
-            <table class="camera-settings-table">
-                <thead>
-                    <tr>
-                        <th scope="col" data-camera-settings-copy="slot">Slot</th>
-                        <th scope="col" data-camera-settings-copy="device">Camera index</th>
-                        <th scope="col" data-camera-settings-copy="label">Custom label / role</th>
-                        <th scope="col" data-camera-settings-copy="active">Active</th>
-                        <th scope="col" data-camera-settings-copy="remove">Remove</th>
-                    </tr>
-                </thead>
-                <tbody id="cameraSettingsRows"></tbody>
-            </table>
-        </div>
-        <div class="camera-settings-toolbar">
-            <button class="camera-settings-add" type="button" id="addCameraSlot" data-camera-settings-copy="addCamera">Add camera</button>
-        </div>
-        <p class="camera-settings-message" id="cameraSettingsMessage" role="status" aria-live="polite"></p>
-        <div class="camera-settings-actions">
-            <button class="camera-settings-secondary" type="button" data-camera-settings-close data-camera-settings-copy="cancel">Cancel</button>
-            <button class="camera-settings-primary" id="saveCameraSettings" type="submit" data-camera-settings-copy="save">Save settings</button>
+        <div class="camera-settings-footer">
+            <p class="camera-settings-message" id="cameraSettingsMessage" role="status" aria-live="polite"></p>
+            <div class="camera-settings-actions">
+                <button class="camera-settings-secondary" type="button" data-camera-settings-close data-camera-settings-copy="cancel">Cancel</button>
+                <button class="camera-settings-primary" id="saveCameraSettings" type="submit" data-camera-settings-copy="save">Save settings</button>
+            </div>
         </div>
     </form>
 </dialog>
@@ -89,6 +100,9 @@
 
         document.querySelectorAll('[data-camera-settings-copy]').forEach(element => {
             element.textContent = text(element.dataset.cameraSettingsCopy);
+        });
+        document.querySelectorAll('[data-camera-settings-aria]').forEach(element => {
+            element.setAttribute('aria-label', text(element.dataset.cameraSettingsAria));
         });
         document.querySelectorAll('[data-camera-settings-open]').forEach(button => {
             button.setAttribute('aria-label', text('title'));
@@ -170,8 +184,9 @@
                 const remove = document.createElement('button');
                 remove.type = 'button';
                 remove.className = 'camera-settings-remove';
-                remove.textContent = text('remove');
+                remove.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
                 remove.setAttribute('aria-label', text('removeCamera', { slot: camera.slot }));
+                remove.title = text('removeCamera', { slot: camera.slot });
                 remove.disabled = settings.cameras.length <= 1;
                 remove.addEventListener('click', () => removeCamera(cameraIndex));
                 removeCell.append(remove);

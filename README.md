@@ -20,6 +20,12 @@ Open <http://localhost:5000>. The stereo monitor captures its selected pair in t
 
 The interface is available in English and Hungarian. Use the **EN / HU** selector in the page header; the selected language is remembered in this browser.
 
+### Interface Layout
+
+Both pages share a sticky top bar. It holds the Stereo Lab brand, the **Stereo monitor / Multi-camera monitor** page switcher, a connection status pill, the **EN / HU** language toggle, and the gear button for camera settings. The shared design tokens and components (buttons, form fields, toggle switches, sliders, and dialogs) are in `templates/_theme.html`, and both pages include it.
+
+On the stereo monitor, the control bar groups the **Left** and **Right** camera selectors with a refresh icon, then **Detailed settings** and **Connect cameras**. Every settings dialog has a sticky header with a close (×) button and a sticky footer for its actions, so **Apply** and **Cancel** stay visible while you scroll. Inside **Detailed settings**, a row of shortcuts opens **Depth tools**, **Pose tracking**, **Camera hardware**, and **Camera calibration**. On the multi-camera monitor, **Processing**, **ChArUco global calibration**, and **TAP-Net temporal tracking** appear as cards; the last two collapse.
+
 Camera source is a browser-local preference, so remote users can select **Browser cameras** to use webcams attached to their own computers while local users select **Docker / Linux devices** to use cameras attached to the server. A browser's source choice is remembered only in that browser; camera slot labels, indexes, and Active checkboxes are shared by the server.
 
 The multi-camera monitor uses 1 to 16 slots. Device indexes are unique integers from 0 to 31. A fresh install starts with four slots and the first two active. Existing four-slot `cameras.json` files still load.
@@ -36,7 +42,7 @@ Open **Detailed settings** to tune StereoSGBM when the depth map is too noisy, m
 
 ### Multi-Camera Monitor
 
-Open **Multi-camera monitor** from the shared **Pages** panel on either page for a live preview of the configured cameras. One camera fills the page; additional cameras wrap across the grid. Use the gear button to select the capture source, add or remove slots (1 to 16), and map each slot to an index, custom label, and Active state. Press **Connect active cameras** to start enabled feeds or **Disconnect cameras** to release them. The shared settings are atomically saved to `config/cameras.json` in the container and persisted to the host `./camera-config` folder by Compose.
+Open **Multi-camera monitor** from the shared **Pages** panel on either page for a live preview of the configured cameras. One camera fills the page; additional cameras wrap across the grid. Use the gear button in the top bar to select the capture source, add slots with **Add camera** or remove them with the trash icon (1 to 16 slots), and map each slot to an index, custom label, and Active switch. On narrow screens, each slot is shown as a card instead of a table row. Press **Connect active cameras** to start enabled feeds or **Disconnect cameras** to release them. The shared settings are atomically saved to `config/cameras.json` in the container and persisted to the host `./camera-config` folder by Compose.
 
 Choose a processing mode under the grid: **Preview**, **Multi-view stereo**, **Thermal fusion**, **Thermal stereo**, or **Visual SLAM**. Preview only shows the live grid. The other modes add a server-rendered output. Browser mode uploads frames from this computer while a processing mode is active. Docker mode processes the frames already captured on the server. Multi-view stereo and thermal stereo need two camera frames and show an error when fewer are available. Preview and visual SLAM still run with one camera. Thermal fusion needs one RGB camera and at least one other camera marked as thermal.
 
