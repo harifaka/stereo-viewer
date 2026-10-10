@@ -18,6 +18,10 @@
                     <option value="docker" data-camera-settings-copy="dockerSource">Docker / Linux devices</option>
                 </select>
             </div>
+            <section aria-live="polite">
+                <h3 data-camera-settings-copy="availableTitle">Detected Docker / Linux cameras</h3>
+                <ul id="availableCameraDevices"></ul>
+            </section>
             <div class="camera-settings-table-wrap">
                 <table class="camera-settings-table">
                     <thead>
@@ -55,6 +59,9 @@
                 kicker: 'Camera setup', title: 'Camera source and mapping',
                 intro: 'Choose the source for the Multi-Camera Monitor in this browser. Camera labels, indexes, and Active settings are shared by the server.',
                 source: 'Capture source', browserSource: 'Browser cameras', dockerSource: 'Docker / Linux devices',
+                availableTitle: 'Detected Docker / Linux cameras',
+                noAvailableDevices: 'No functional /dev/video devices detected.',
+                availableDevicesError: 'Could not list available devices.',
                 slot: 'Slot', device: 'Camera index', label: 'Custom label / role', active: 'Active', remove: 'Remove',
                 addCamera: 'Add camera', removeCamera: 'Remove camera {slot}',
                 cancel: 'Cancel', save: 'Save settings', close: 'Close camera settings',
@@ -70,6 +77,9 @@
                 kicker: 'Kamerabeállítás', title: 'Kameraforrás és kiosztás',
                 intro: 'Válaszd ki a Többkamerás monitor forrását ebben a böngészőben. A címkék, indexek és Aktív beállítások a szerver felhasználói között közösek.',
                 source: 'Rögzítési forrás', browserSource: 'Böngésző kamerái', dockerSource: 'Docker / Linux eszközök',
+                availableTitle: 'Észlelt Docker / Linux kamerák',
+                noAvailableDevices: 'Nem található működő /dev/video eszköz.',
+                availableDevicesError: 'Az elérhető eszközök listája nem tölthető be.',
                 slot: 'Hely', device: 'Kameraindex', label: 'Egyéni címke / szerep', active: 'Aktív', remove: 'Eltávolítás',
                 addCamera: 'Kamera hozzáadása', removeCamera: 'A(z) {slot}. kamera eltávolítása',
                 cancel: 'Mégse', save: 'Beállítások mentése', close: 'Kamerabeállítások bezárása',
@@ -91,6 +101,7 @@
         if (!dialog) return;
         const form = document.getElementById('cameraSettingsForm');
         const rows = document.getElementById('cameraSettingsRows');
+        const availableDevices = document.getElementById('availableCameraDevices');
         const sourceSelect = document.getElementById('cameraCaptureSource');
         const message = document.getElementById('cameraSettingsMessage');
         const saveButton = document.getElementById('saveCameraSettings');
@@ -114,6 +125,7 @@
                     const response = await fetch('/api/camera-settings');
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error || 'Request failed.');
+                    await renderAvailableDevices();
                     render({
                         ...result,
                         captureSource: localStorage.getItem('stereoCameraSource') === 'docker' ? 'docker' : 'browser'
@@ -193,6 +205,32 @@
                 row.append(slot, deviceCell, labelCell, activeCell, removeCell);
                 rows.append(row);
             });
+        }
+
+        async function renderAvailableDevices() {
+            availableDevices.replaceChildren();
+            try {
+                const response = await fetch('/api/cameras/available');
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Request failed.');
+                const devices = Array.isArray(result.devices) ? result.devices : [];
+                if (!devices.length) {
+                    const item = document.createElement('li');
+                    item.textContent = text('noAvailableDevices');
+                    availableDevices.append(item);
+                    return;
+                }
+                devices.forEach(device => {
+                    const item = document.createElement('li');
+                    item.textContent = device.path;
+                    availableDevices.append(item);
+                });
+            } catch (error) {
+                console.error('Could not load available Docker/Linux camera devices.', error);
+                const item = document.createElement('li');
+                item.textContent = text('availableDevicesError');
+                availableDevices.append(item);
+            }
         }
 
         function readCameras() {

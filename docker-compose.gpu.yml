@@ -10,6 +10,7 @@ services:
     environment:
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+      OPENCV_VIDEOIO_PRIORITY_OBSENSOR: 0
     deploy:
       resources:
         reservations:

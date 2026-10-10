@@ -90,6 +90,46 @@ DEFAULT_CAMERA_SETTINGS = {
 }
 
 
+def detect_available_cameras():
+    available = []
+    for device_index in range(32):
+        device_path = f'/dev/video{device_index}'
+        if not os.path.exists(device_path):
+            continue
+
+        capture = None
+        try:
+            capture = cv2.VideoCapture(device_index)
+            if not capture.isOpened():
+                continue
+            success, frame = capture.read()
+            if success and frame is not None:
+                available.append(device_index)
+        except cv2.error:
+            app.logger.exception('Could not probe camera device %s.', device_path)
+        finally:
+            if capture is not None:
+                capture.release()
+    app.logger.info('Detected functional video devices: %s', available)
+    return available
+
+
+def automatic_camera_settings(device_indices):
+    if not device_indices:
+        return DEFAULT_CAMERA_SETTINGS
+    return {
+        'cameras': [
+            {
+                'slot': slot,
+                'label': f'Camera {slot}',
+                'deviceIndex': device_index,
+                'active': True,
+            }
+            for slot, device_index in enumerate(device_indices[:3], start=1)
+        ]
+    }
+
+
 def validate_camera_settings(data):
     if not isinstance(data, dict) or not isinstance(data.get('cameras'), list):
         raise ValueError('Camera settings must contain a cameras list.')
@@ -128,12 +168,8 @@ def validate_camera_settings(data):
 
 
 def load_camera_settings():
-    try:
-        with CAMERA_SETTINGS_PATH.open(encoding='utf-8') as config_file:
-            return validate_camera_settings(json.load(config_file))
-    except (OSError, json.JSONDecodeError, ValueError):
-        app.logger.exception('Could not load camera settings from %s', CAMERA_SETTINGS_PATH)
-        raise
+    with CAMERA_SETTINGS_PATH.open(encoding='utf-8') as config_file:
+        return validate_camera_settings(json.load(config_file))
 
 
 def save_camera_settings(settings):
@@ -340,8 +376,32 @@ class CameraStreamManager:
         return frames
 
 
+def initial_camera_settings(available_device_indices):
+    if CAMERA_SETTINGS_PATH.is_file():
+        try:
+            settings = load_camera_settings()
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            app.logger.warning(
+                'Ignoring missing or outdated camera settings at %s: %s',
+                CAMERA_SETTINGS_PATH,
+                error,
+            )
+        else:
+            if not available_device_indices or all(
+                camera['deviceIndex'] in available_device_indices
+                for camera in settings['cameras']
+            ):
+                return settings
+            app.logger.info(
+                'Camera settings reference devices that are not currently functional; '
+                'using automatic camera assignments.'
+            )
+    return automatic_camera_settings(available_device_indices)
+
+
+AVAILABLE_CAMERA_INDICES = detect_available_cameras()
 camera_settings_lock = Lock()
-camera_settings = load_camera_settings() if CAMERA_SETTINGS_PATH.is_file() else DEFAULT_CAMERA_SETTINGS
+camera_settings = initial_camera_settings(AVAILABLE_CAMERA_INDICES)
 camera_stream_manager = CameraStreamManager()
 multiview_runtime = multiview.MultiViewRuntime()
 CALIBRATION_VIEWS_REQUIRED = 8
@@ -1646,6 +1706,19 @@ def camera_settings_endpoint():
             camera_settings = updated
             camera_stream_manager.configure(camera_settings)
         return jsonify(camera_settings)
+
+
+@app.route('/api/cameras/available')
+def available_cameras_endpoint():
+    return jsonify({
+        'devices': [
+            {
+                'deviceIndex': device_index,
+                'path': f'/dev/video{device_index}',
+            }
+            for device_index in AVAILABLE_CAMERA_INDICES
+        ]
+    })
 
 
 @app.route('/api/cameras/start', methods=['POST'])

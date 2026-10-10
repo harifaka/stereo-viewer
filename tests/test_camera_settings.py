@@ -131,6 +131,71 @@ class CameraSettingsApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()['error'], 'A valid camera client ID is required.')
 
+    def test_available_camera_endpoint_lists_detected_video_nodes(self):
+        original_devices = stereo_app.AVAILABLE_CAMERA_INDICES
+        stereo_app.AVAILABLE_CAMERA_INDICES = [0, 4, 31]
+        try:
+            response = self.client.get('/api/cameras/available')
+        finally:
+            stereo_app.AVAILABLE_CAMERA_INDICES = original_devices
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {
+            'devices': [
+                {'deviceIndex': 0, 'path': '/dev/video0'},
+                {'deviceIndex': 4, 'path': '/dev/video4'},
+                {'deviceIndex': 31, 'path': '/dev/video31'},
+            ]
+        })
+
+
+class CameraDiscoveryTests(unittest.TestCase):
+    def test_detects_only_existing_devices_that_return_a_frame(self):
+        class FakeCapture:
+            def __init__(self, device_index):
+                self.device_index = device_index
+
+            def isOpened(self):
+                return self.device_index in (1, 2, 3)
+
+            def read(self):
+                return self.device_index == 1, object() if self.device_index == 1 else None
+
+            def release(self):
+                pass
+
+        def exists(path):
+            return path in ('/dev/video1', '/dev/video2', '/dev/video3')
+
+        with patch.object(stereo_app.os.path, 'exists', side_effect=exists), patch.object(
+            stereo_app.cv2, 'VideoCapture', side_effect=FakeCapture
+        ):
+            self.assertEqual(stereo_app.detect_available_cameras(), [1])
+
+    def test_automatic_settings_assign_the_first_three_detected_devices(self):
+        settings = stereo_app.automatic_camera_settings([2, 5, 9, 12])
+
+        self.assertEqual(
+            [(camera['slot'], camera['deviceIndex'], camera['active']) for camera in settings['cameras']],
+            [(1, 2, True), (2, 5, True), (3, 9, True)],
+        )
+
+    def test_outdated_settings_fall_back_to_detected_devices(self):
+        original_path = stereo_app.CAMERA_SETTINGS_PATH
+        with tempfile.TemporaryDirectory() as directory:
+            stereo_app.CAMERA_SETTINGS_PATH = Path(directory) / 'cameras.json'
+            with stereo_app.CAMERA_SETTINGS_PATH.open('w', encoding='utf-8') as config_file:
+                json.dump(camera_configuration(), config_file)
+            try:
+                settings = stereo_app.initial_camera_settings([6, 8, 12])
+            finally:
+                stereo_app.CAMERA_SETTINGS_PATH = original_path
+
+        self.assertEqual(
+            [camera['deviceIndex'] for camera in settings['cameras']],
+            [6, 8, 12],
+        )
+
 
 class CameraStreamManagerTests(unittest.TestCase):
     def test_shares_capture_workers_until_the_last_client_disconnects(self):
