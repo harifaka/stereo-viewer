@@ -5,8 +5,11 @@ services:
       - "5000:5000"
     environment:
       CAMERA_SETTINGS_PATH: /app/config/cameras.json
+      TAPNET_CHECKPOINT: /app/models/tapir_checkpoint.pt
     volumes:
       - "./camera-config:/app/config"
+      # Place a TAPIR / BootsTAPIR PyTorch checkpoint here as tapir_checkpoint.pt.
+      - "./models:/app/models"
     # Indexes 0-3 are mapped here. Add /dev/video4 and above only when that node exists.
     devices:
       - "/dev/video0:/dev/video0"

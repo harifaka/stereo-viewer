@@ -12,6 +12,8 @@ from flask import Flask, render_template, Response, request, jsonify, send_file,
 import cv2
 import numpy as np
 import multiview
+import stereo_extras
+import temporal
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
@@ -41,7 +43,39 @@ pose_model_lock = Lock()
 pose_model = None
 pose_settings = {'enabled': False, 'view': 'composite', 'confidence': 0.35}
 tap_settings_lock = Lock()
-tap_settings = {'enabled': False, 'cameraSlots': [1, 2], 'composite': True}
+tap_settings = {
+    'enabled': False,
+    'cameraSlots': [1, 2],
+    'composite': True,
+    'backend': 'auto',
+    'maxPoints': 80,
+    'holdFrames': 12,
+}
+output_settings_lock = Lock()
+output_settings = {'view': 'disparity', 'bokehThreshold': 0.45, 'bokehBlur': 31}
+detection_settings_lock = Lock()
+detection_model_lock = Lock()
+detection_model = None
+detection_settings = {'enabled': False, 'view': 'both', 'confidence': 0.4}
+temporal_settings_lock = Lock()
+temporal_settings = {
+    'enabled': False,
+    'smoothing': 0.6,
+    'holdFrames': 10,
+    'trackMeasurement': True,
+    'autoCorrect': False,
+    'backend': 'auto',
+}
+temporal_lock = Lock()
+disparity_filter = temporal.DisparityTemporalFilter()
+measurement_tracker = temporal.MeasurementTracker()
+drift_corrector = temporal.StereoDriftCorrector()
+temporal_backend_message = ''
+temporal_backend_preference = None
+stereo_output_hub = stereo_extras.OutputHub()
+tap_runtime = temporal.TapRuntime()
+acceleration_lock = Lock()
+acceleration_state = {'stereoBackend': 'cpu', 'cudaError': None}
 CAMERA_SETTINGS_PATH = Path(os.environ.get('CAMERA_SETTINGS_PATH', 'config/cameras.json'))
 DEFAULT_CAMERA_SETTINGS = {
     'cameras': [
@@ -389,7 +423,205 @@ def estimate_point(disparity_map, x, y, active, params):
     return {'x': x, 'y': y, 'disparity': round(disparity, 2), 'distanceM': round(distance_m, 3)}, None
 
 
-def process_disparity(frame_left, frame_right, params, return_map=False, measurement_point=None, pose_options=None):
+def opencv_cuda_devices():
+    try:
+        return cv2.cuda.getCudaEnabledDeviceCount()
+    except (AttributeError, cv2.error):
+        return 0
+
+
+CUDA_STEREO_AVAILABLE = opencv_cuda_devices() > 0 and hasattr(cv2.cuda, 'createStereoSGM')
+CUDA_SGM_DISPARITIES = (64, 128, 256)
+
+
+def torch_cuda_available():
+    try:
+        import torch
+    except ImportError:
+        return False
+    return bool(torch.cuda.is_available())
+
+
+def compute_disparity(gray_left, gray_right, params):
+    """Runs StereoSGM on the GPU when OpenCV has CUDA support, otherwise StereoSGBM on the CPU."""
+    block_size = params['blockSize']
+    p1 = 8 * block_size * block_size
+    p2 = 32 * block_size * block_size
+    if CUDA_STEREO_AVAILABLE and params['numDisparities'] in CUDA_SGM_DISPARITIES:
+        try:
+            matcher = cv2.cuda.createStereoSGM(
+                minDisparity=params['minDisparity'],
+                numDisparities=params['numDisparities'],
+                P1=p1,
+                P2=p2,
+                uniquenessRatio=params['uniquenessRatio'],
+                mode=cv2.STEREO_SGBM_MODE_HH4,
+            )
+            gpu_left = cv2.cuda_GpuMat()
+            gpu_right = cv2.cuda_GpuMat()
+            gpu_left.upload(gray_left)
+            gpu_right.upload(gray_right)
+            disparity = matcher.compute(gpu_left, gpu_right).download().astype(np.float32) / 16
+            with acceleration_lock:
+                acceleration_state['stereoBackend'] = 'cuda'
+            return disparity, 'cuda'
+        except cv2.error as error:
+            with acceleration_lock:
+                if acceleration_state['cudaError'] is None:
+                    app.logger.warning('CUDA StereoSGM failed; falling back to CPU: %s', error)
+                acceleration_state['cudaError'] = str(error).splitlines()[0][:240]
+    stereo = cv2.StereoSGBM_create(
+        minDisparity=params['minDisparity'],
+        numDisparities=params['numDisparities'],
+        blockSize=block_size,
+        P1=p1,
+        P2=p2,
+        disp12MaxDiff=params['disp12MaxDiff'],
+        preFilterCap=params['preFilterCap'],
+        uniquenessRatio=params['uniquenessRatio'],
+        speckleWindowSize=params['speckleWindowSize'],
+        speckleRange=params['speckleRange'],
+        mode=STEREO_MODES[params['mode']],
+    )
+    with acceleration_lock:
+        acceleration_state['stereoBackend'] = 'cpu'
+    return stereo.compute(gray_left, gray_right).astype(np.float32) / 16, 'cpu'
+
+
+def rectify_pair(frame_left, frame_right):
+    """Returns rectified frames, the active calibration, and that calibration only if it fits this resolution."""
+    with calibration_lock:
+        active_calibration = calibration_state['active']
+    if active_calibration and active_calibration['image_size'] == (frame_left.shape[1], frame_left.shape[0]):
+        map_left = active_calibration['map_left']
+        map_right = active_calibration['map_right']
+        frame_left = cv2.remap(frame_left, map_left[0], map_left[1], cv2.INTER_LINEAR)
+        frame_right = cv2.remap(frame_right, map_right[0], map_right[1], cv2.INTER_LINEAR)
+        return frame_left, frame_right, active_calibration, active_calibration
+    return frame_left, frame_right, active_calibration, None
+
+
+def colorize_disparity(disparity_map, params):
+    valid = disparity_map > params['minDisparity']
+    disparity_gray = np.zeros(disparity_map.shape, dtype=np.uint8)
+    disparity_gray[valid] = np.clip(
+        (disparity_map[valid] - params['minDisparity'])
+        * (255 / params['numDisparities']),
+        0,
+        255,
+    ).astype(np.uint8)
+    color_disparity = cv2.applyColorMap(disparity_gray, COLOR_MAPS[params['colorMap']])
+    color_disparity[~valid] = (0, 0, 0)
+    return color_disparity
+
+
+def render_output_view(rect_left, rect_right, disparity_map, params, options):
+    if options['view'] == 'anaglyph':
+        return stereo_extras.anaglyph(rect_left, rect_right)
+    if options['view'] == 'bokeh':
+        threshold = params['minDisparity'] + options['bokehThreshold'] * params['numDisparities']
+        return stereo_extras.bokeh(rect_left, disparity_map, threshold, options['bokehBlur'])
+    return colorize_disparity(disparity_map, params)
+
+
+def run_temporal_stage(rect_left, gray_left, disparity_map, measurement_point, params, options):
+    global temporal_backend_message, temporal_backend_preference
+    with temporal_lock:
+        if options['backend'] != temporal_backend_preference:
+            backend, temporal_backend_message = temporal.create_backend(options['backend'])
+            measurement_tracker.use_backend(backend)
+            temporal_backend_preference = options['backend']
+        disparity_map, filter_stats = disparity_filter.apply(
+            disparity_map, gray_left, params['minDisparity'], options['smoothing'], options['holdFrames']
+        )
+        tracked_point = None
+        if measurement_point is not None and options['trackMeasurement']:
+            try:
+                tracked_point = measurement_tracker.update(measurement_point, rect_left, options['holdFrames'])
+            except Exception as error:
+                app.logger.exception('measurement tracking failed')
+                measurement_tracker.use_backend(temporal.LucasKanadeBackend())
+                temporal_backend_message = f'Tracking failed ({error}); using Lucas-Kanade fallback.'[:240]
+                tracked_point = {'x': measurement_point[0], 'y': measurement_point[1], 'tracked': False, 'occluded': False}
+        data = {
+            'backend': measurement_tracker.backend.name,
+            'message': temporal_backend_message,
+            **filter_stats,
+        }
+    return disparity_map, tracked_point, data
+
+
+def run_detection_model(frame, confidence):
+    global detection_model
+    with detection_model_lock:
+        if detection_model is None:
+            from ultralytics import YOLO
+            detection_model = YOLO('yolov8n.pt')
+        return detection_model.predict(frame, conf=confidence, verbose=False, device=temporal.inference_device())[0]
+
+
+def disparity_in_region(disparity_map, box, params):
+    left, top, right, bottom = box
+    width, height = right - left, bottom - top
+    inner = (
+        int(max(0, left + width * 0.3)),
+        int(max(0, top + height * 0.3)),
+        int(min(disparity_map.shape[1], right - width * 0.3)),
+        int(min(disparity_map.shape[0], bottom - height * 0.3)),
+    )
+    region = disparity_map[inner[1]:max(inner[1] + 1, inner[3]), inner[0]:max(inner[0] + 1, inner[2])]
+    valid = region[np.isfinite(region) & (region > params['minDisparity'])]
+    if valid.size < 5:
+        return None
+    return float(np.median(valid))
+
+
+def detect_objects(frame_left, disparity_map, active_calibration, params, options):
+    result = {'view': options['view'], 'metricAvailable': False, 'objects': [], 'error': None}
+    metric = bool(active_calibration and active_calibration.get('metric') and active_calibration.get('q') is not None)
+    result['metricAvailable'] = metric
+    try:
+        prediction = run_detection_model(frame_left, options['confidence'])
+        boxes = prediction.boxes
+        if boxes is None or boxes.xyxy is None:
+            return result
+        coordinates = boxes.xyxy.cpu().numpy()
+        classes = boxes.cls.cpu().numpy().astype(int)
+        confidences = boxes.conf.cpu().numpy()
+        for (x1, y1, x2, y2), class_index, confidence in list(zip(coordinates, classes, confidences))[:20]:
+            corners = [pose_disparity_pixel(x, y, active_calibration, False) for x, y in ((x1, y1), (x2, y1), (x1, y2), (x2, y2))]
+            rect_box = [
+                min(point[0] for point in corners), min(point[1] for point in corners),
+                max(point[0] for point in corners), max(point[1] for point in corners),
+            ]
+            disparity = disparity_in_region(disparity_map, rect_box, params)
+            distance_m = None
+            if metric and disparity is not None:
+                center_x = (rect_box[0] + rect_box[2]) / 2
+                center_y = (rect_box[1] + rect_box[3]) / 2
+                homogeneous = active_calibration['q'] @ np.array([center_x, center_y, disparity, 1.0])
+                if abs(homogeneous[3]) >= 1e-9:
+                    value = float(np.linalg.norm(homogeneous[:3] / homogeneous[3]) / 1000)
+                    if math.isfinite(value) and value > 0:
+                        distance_m = round(value, 2)
+            result['objects'].append({
+                'label': prediction.names.get(int(class_index), str(class_index)),
+                'confidence': round(float(confidence), 2),
+                'box': [round(float(value), 1) for value in (x1, y1, x2, y2)],
+                'rectBox': [round(float(value), 1) for value in rect_box],
+                'disparity': None if disparity is None else round(disparity, 2),
+                'distanceM': distance_m,
+            })
+    except Exception as error:
+        app.logger.exception('object detection failed')
+        result['error'] = str(error)[:240]
+    return result
+
+
+def process_disparity(
+    frame_left, frame_right, params, return_map=False, measurement_point=None,
+    pose_options=None, live=False,
+):
     if frame_left.shape[:2] != frame_right.shape[:2]:
         frame_right = cv2.resize(frame_right, (frame_left.shape[1], frame_left.shape[0]))
     pose_frame_left = frame_left
@@ -398,62 +630,61 @@ def process_disparity(frame_left, frame_right, params, return_map=False, measure
     if frame_left.shape[1] <= params['numDisparities'] + params['blockSize']:
         return jsonify({'error': 'The selected camera resolution is too narrow for these settings.'}), 400
 
-    with calibration_lock:
-        active_calibration = calibration_state['active']
-        if active_calibration and active_calibration['image_size'] == (frame_left.shape[1], frame_left.shape[0]):
-            map_left = active_calibration['map_left']
-            map_right = active_calibration['map_right']
-            pose_calibration = active_calibration
-        else:
-            map_left = map_right = None
-            pose_calibration = None
-    if map_left is not None:
-        frame_left = cv2.remap(frame_left, map_left[0], map_left[1], cv2.INTER_LINEAR)
-        frame_right = cv2.remap(frame_right, map_right[0], map_right[1], cv2.INTER_LINEAR)
+    frame_left, frame_right, active_calibration, pose_calibration = rectify_pair(frame_left, frame_right)
+    if live:
+        with temporal_settings_lock:
+            temporal_options = temporal_settings.copy()
+        with output_settings_lock:
+            view_options = output_settings.copy()
+        with detection_settings_lock:
+            detection_options = detection_settings.copy()
+    else:
+        temporal_options = None
+        view_options = {'view': 'disparity'}
+        detection_options = None
 
     try:
         gray_left = cv2.cvtColor(frame_left, cv2.COLOR_BGR2GRAY)
         gray_right = cv2.cvtColor(frame_right, cv2.COLOR_BGR2GRAY)
-        block_size = params['blockSize']
-        stereo = cv2.StereoSGBM_create(
-            minDisparity=params['minDisparity'],
-            numDisparities=params['numDisparities'],
-            blockSize=block_size,
-            P1=8 * block_size * block_size,
-            P2=32 * block_size * block_size,
-            disp12MaxDiff=params['disp12MaxDiff'],
-            preFilterCap=params['preFilterCap'],
-            uniquenessRatio=params['uniquenessRatio'],
-            speckleWindowSize=params['speckleWindowSize'],
-            speckleRange=params['speckleRange'],
-            mode=STEREO_MODES[params['mode']],
-        )
-        disparity_map = stereo.compute(gray_left, gray_right).astype(np.float32) / 16
+        temporal_data = None
+        if temporal_options and temporal_options['autoCorrect']:
+            with temporal_lock:
+                frame_right, gray_right = drift_corrector.correct(gray_left, gray_right, frame_right)
+                temporal_data = {'drift': drift_corrector.status()}
+        disparity_map, stereo_backend = compute_disparity(gray_left, gray_right, params)
         if return_map:
             return disparity_map
+        tracked_point = None
+        if temporal_options and temporal_options['enabled']:
+            disparity_map, tracked_point, stage_data = run_temporal_stage(
+                frame_left, gray_left, disparity_map, measurement_point, params, temporal_options
+            )
+            temporal_data = {**(temporal_data or {}), **stage_data}
+            if tracked_point is not None:
+                measurement_point = (tracked_point['x'], tracked_point['y'])
         measurement = measurement_error = None
         if measurement_point is not None:
             measurement, measurement_error = estimate_point(
                 disparity_map, *measurement_point, active_calibration, params
             )
+            if tracked_point is not None:
+                with temporal_lock:
+                    measurement, measurement_error = measurement_tracker.stabilize(
+                        measurement, measurement_error,
+                        temporal_options['smoothing'], temporal_options['holdFrames'],
+                    )
         pose_data = None
         if pose_options and pose_options['enabled']:
             pose_data = estimate_pose_data(
                 pose_frame_left, pose_frame_right, disparity_map, pose_calibration,
                 params, pose_options
             )
-        valid = disparity_map > params['minDisparity']
-        disparity_gray = np.zeros(disparity_map.shape, dtype=np.uint8)
-        disparity_gray[valid] = np.clip(
-            (disparity_map[valid] - params['minDisparity'])
-            * (255 / params['numDisparities']),
-            0,
-            255,
-        ).astype(np.uint8)
+        detection_data = None
+        if detection_options and detection_options['enabled']:
+            detection_data = detect_objects(pose_frame_left, disparity_map, pose_calibration, params, detection_options)
 
-        color_disparity = cv2.applyColorMap(disparity_gray, COLOR_MAPS[params['colorMap']])
-        color_disparity[~valid] = (0, 0, 0)
-        encoded, buffer = cv2.imencode('.jpg', color_disparity)
+        output_image = render_output_view(frame_left, frame_right, disparity_map, params, view_options)
+        encoded, buffer = cv2.imencode('.jpg', output_image)
         if not encoded:
             app.logger.error('disparity JPEG encoding failed')
             return jsonify({'error': 'Could not encode the disparity image.'}), 500
@@ -461,12 +692,23 @@ def process_disparity(frame_left, frame_right, params, return_map=False, measure
         app.logger.exception('disparity processing failed')
         return jsonify({'error': 'Stereo image processing failed; see container logs.'}), 500
 
-    headers = {'Cache-Control': 'no-store'}
+    jpeg = buffer.tobytes()
+    if live:
+        stereo_output_hub.publish(jpeg)
+    headers = {'Cache-Control': 'no-store', 'X-Stereo-Backend': stereo_backend, 'X-Output-View': view_options['view']}
     if measurement_point is not None:
-        headers['X-Measurement'] = json.dumps({'measurement': measurement, 'error': measurement_error})
+        headers['X-Measurement'] = json.dumps({
+            'measurement': measurement,
+            'error': measurement_error,
+            'point': tracked_point,
+        })
     if pose_data is not None:
         headers['X-Pose-Data'] = json.dumps(pose_data, separators=(',', ':'))
-    return Response(buffer.tobytes(), mimetype='image/jpeg', headers=headers)
+    if detection_data is not None:
+        headers['X-Detection-Data'] = json.dumps(detection_data, separators=(',', ':'))
+    if temporal_data is not None:
+        headers['X-Temporal-Data'] = json.dumps(temporal_data, separators=(',', ':'))
+    return Response(jpeg, mimetype='image/jpeg', headers=headers)
 
 
 def validate_pose_settings(data):
@@ -512,10 +754,87 @@ def validate_tap_settings(data, allowed_slots=None):
         raise ValueError('composite must be a boolean.')
     if enabled and not camera_slots and not composite:
         raise ValueError('Select at least one camera or the composite view.')
+    backend = data.get('backend', tap_settings['backend'])
+    if backend not in temporal.BACKENDS:
+        raise ValueError('backend must be auto, tapir, or lucas-kanade.')
+    max_points = integer_setting(data, 'maxPoints', tap_settings['maxPoints'], 8, 200)
+    hold_frames = integer_setting(data, 'holdFrames', tap_settings['holdFrames'], 0, 60)
     return {
         'enabled': enabled,
         'cameraSlots': sorted(camera_slots),
         'composite': composite,
+        'backend': backend,
+        'maxPoints': max_points,
+        'holdFrames': hold_frames,
+    }
+
+
+def integer_setting(data, key, fallback, minimum, maximum):
+    value = data.get(key, fallback)
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise ValueError(f'{key} must be an integer from {minimum} to {maximum}.')
+    return value
+
+
+def number_setting(data, key, fallback, minimum, maximum):
+    value = data.get(key, fallback)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f'{key} must be a number.')
+    value = float(value)
+    if not math.isfinite(value) or not minimum <= value <= maximum:
+        raise ValueError(f'{key} must be between {minimum} and {maximum}.')
+    return value
+
+
+def boolean_setting(data, key, fallback):
+    value = data.get(key, fallback)
+    if not isinstance(value, bool):
+        raise ValueError(f'{key} must be a boolean.')
+    return value
+
+
+def validate_output_settings(data):
+    if not isinstance(data, dict):
+        raise ValueError('Output settings must be a JSON object.')
+    view = data.get('view', output_settings['view'])
+    if view not in stereo_extras.OUTPUT_VIEWS:
+        raise ValueError('view must be disparity, anaglyph, or bokeh.')
+    blur = integer_setting(data, 'bokehBlur', output_settings['bokehBlur'], 5, 75)
+    if blur % 2 == 0:
+        raise ValueError('bokehBlur must be odd.')
+    return {
+        'view': view,
+        'bokehThreshold': number_setting(data, 'bokehThreshold', output_settings['bokehThreshold'], 0.05, 0.95),
+        'bokehBlur': blur,
+    }
+
+
+def validate_detection_settings(data):
+    if not isinstance(data, dict):
+        raise ValueError('Detection settings must be a JSON object.')
+    view = data.get('view', detection_settings['view'])
+    if view not in ('left', 'composite', 'both'):
+        raise ValueError('view must be left, composite, or both.')
+    return {
+        'enabled': boolean_setting(data, 'enabled', detection_settings['enabled']),
+        'view': view,
+        'confidence': number_setting(data, 'confidence', detection_settings['confidence'], 0.1, 0.9),
+    }
+
+
+def validate_temporal_settings(data):
+    if not isinstance(data, dict):
+        raise ValueError('Temporal settings must be a JSON object.')
+    backend = data.get('backend', temporal_settings['backend'])
+    if backend not in temporal.BACKENDS:
+        raise ValueError('backend must be auto, tapir, or lucas-kanade.')
+    return {
+        'enabled': boolean_setting(data, 'enabled', temporal_settings['enabled']),
+        'smoothing': number_setting(data, 'smoothing', temporal_settings['smoothing'], 0.0, 0.95),
+        'holdFrames': integer_setting(data, 'holdFrames', temporal_settings['holdFrames'], 0, 60),
+        'trackMeasurement': boolean_setting(data, 'trackMeasurement', temporal_settings['trackMeasurement']),
+        'autoCorrect': boolean_setting(data, 'autoCorrect', temporal_settings['autoCorrect']),
+        'backend': backend,
     }
 
 
@@ -525,11 +844,12 @@ def run_pose_model(frame, confidence, tracking):
         if pose_model is None:
             from ultralytics import YOLO
             pose_model = YOLO('yolov8n-pose.pt')
+        device = temporal.inference_device()
         if tracking:
             return pose_model.track(
-                frame, persist=True, conf=confidence, verbose=False
+                frame, persist=True, conf=confidence, verbose=False, device=device
             )[0]
-        return pose_model.predict(frame, conf=confidence, verbose=False)[0]
+        return pose_model.predict(frame, conf=confidence, verbose=False, device=device)[0]
 
 
 def pose_disparity_pixel(x, y, active_calibration, right_view):
@@ -1104,11 +1424,203 @@ def tap_settings_endpoint():
         with tap_settings_lock:
             tap_settings = updated
             settings = tap_settings.copy()
+        tap_runtime.reset()
+    available, message = temporal.tapir_availability()
     return jsonify({
         **settings,
-        'available': False,
-        'status': 'configuration_only',
+        'available': True,
+        'tapirAvailable': available,
+        'tapirMessage': message,
+        'status': 'tracking' if settings['enabled'] else 'disabled',
     })
+
+
+@app.route('/api/tap/output')
+def tap_output_endpoint():
+    client_id = request.args.get('clientId', '')
+    source = request.args.get('source', 'browser')
+    if not valid_camera_client_id(client_id):
+        return jsonify({'error': 'A valid camera client ID is required.'}), 400
+    if source not in ('browser', 'docker'):
+        return jsonify({'error': 'source must be browser or docker.'}), 400
+
+    def generate():
+        while True:
+            started = time.perf_counter()
+            with tap_settings_lock:
+                settings = tap_settings.copy()
+            frames = multiview_runtime.prepare_frames(multiview_frames_for(source, client_id))
+            try:
+                image, status = tap_runtime.render(frames, settings)
+                jpeg = multiview.encode_jpeg(image)
+            except Exception:
+                app.logger.exception('temporal tracking output failed')
+                jpeg = multiview.encode_jpeg(multiview.message_image('Tracking failed. See the application log.'))
+                status = {'ok': False, 'message': 'Tracking failed.', 'targets': []}
+            tap_runtime.remember_status(client_id, status)
+            yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + jpeg + b'\r\n'
+            time.sleep(max(0.05, 0.15 - (time.perf_counter() - started)))
+
+    return Response(
+        generate(),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={'Cache-Control': 'no-store'},
+    )
+
+
+@app.route('/api/tap/status')
+def tap_status_endpoint():
+    return jsonify(tap_runtime.status_for(request.args.get('clientId', '')))
+
+
+def settings_endpoint(lock, getter, setter, validator, on_change=None):
+    if request.method == 'GET':
+        with lock:
+            return jsonify(getter())
+    try:
+        updated = validator(request.get_json(silent=True))
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    with lock:
+        changed = updated != getter()
+        setter(updated)
+    if changed and on_change:
+        on_change()
+    with lock:
+        return jsonify(getter())
+
+
+@app.route('/api/output-settings', methods=['GET', 'POST'])
+def output_settings_endpoint():
+    def setter(value):
+        global output_settings
+        output_settings = value
+    return settings_endpoint(output_settings_lock, lambda: output_settings.copy(), setter, validate_output_settings)
+
+
+@app.route('/api/detection-settings', methods=['GET', 'POST'])
+def detection_settings_endpoint():
+    def setter(value):
+        global detection_settings
+        detection_settings = value
+    return settings_endpoint(detection_settings_lock, lambda: detection_settings.copy(), setter, validate_detection_settings)
+
+
+def reset_temporal_state():
+    with temporal_lock:
+        disparity_filter.reset()
+        measurement_tracker.reset()
+        drift_corrector.reset()
+
+
+@app.route('/api/temporal-settings', methods=['GET', 'POST'])
+def temporal_settings_endpoint():
+    def setter(value):
+        global temporal_settings
+        temporal_settings = value
+
+    def getter():
+        available, message = temporal.tapir_availability()
+        with temporal_lock:
+            drift = drift_corrector.status()
+            backend = measurement_tracker.backend.name
+        return {
+            **temporal_settings,
+            'activeBackend': backend,
+            'tapirAvailable': available,
+            'tapirMessage': message,
+            'drift': drift,
+        }
+
+    if request.method == 'POST':
+        try:
+            updated = validate_temporal_settings(request.get_json(silent=True))
+        except ValueError as error:
+            return jsonify({'error': str(error)}), 400
+        with temporal_settings_lock:
+            changed = updated != temporal_settings
+            setter(updated)
+        if changed:
+            reset_temporal_state()
+    with temporal_settings_lock:
+        return jsonify(getter())
+
+
+@app.route('/api/acceleration')
+def acceleration_endpoint():
+    with acceleration_lock:
+        state = acceleration_state.copy()
+    return jsonify({
+        'opencvCudaDevices': opencv_cuda_devices(),
+        'cudaStereoAvailable': CUDA_STEREO_AVAILABLE,
+        'cudaStereoDisparities': list(CUDA_SGM_DISPARITIES),
+        'torchCuda': torch_cuda_available(),
+        'inferenceDevice': temporal.inference_device(),
+        'open3d': stereo_extras.open3d_available(),
+        **state,
+    })
+
+
+@app.route('/api/stereo/stream')
+def stereo_stream_endpoint():
+    idle = multiview.encode_jpeg(multiview.message_image('Waiting for the stereo monitor to process frames.'))
+    return Response(
+        stereo_output_hub.frames(idle),
+        mimetype='multipart/x-mixed-replace; boundary=frame',
+        headers={'Cache-Control': 'no-store'},
+    )
+
+
+@app.route('/api/pointcloud', methods=['POST'])
+def point_cloud_endpoint():
+    frame_left = decode_frame(request.files.get('left'))
+    frame_right = decode_frame(request.files.get('right'))
+    if frame_left is None or frame_right is None:
+        return jsonify({'error': 'Upload a valid image from each camera.'}), 400
+    if frame_left.shape[:2] != frame_right.shape[:2]:
+        frame_right = cv2.resize(frame_right, (frame_left.shape[1], frame_left.shape[0]))
+    output_format = request.form.get('format', 'points')
+    mesh_method = request.form.get('meshMethod', 'grid')
+    if output_format not in ('points', 'mesh'):
+        return jsonify({'error': 'format must be points or mesh.'}), 400
+    if mesh_method not in stereo_extras.MESH_METHODS:
+        return jsonify({'error': 'meshMethod must be grid or poisson.'}), 400
+    with params_lock:
+        params = stereo_params.copy()
+    rect_left, rect_right, _, calibration = rectify_pair(frame_left, frame_right)
+    if not calibration or not calibration.get('metric') or calibration.get('q') is None:
+        return jsonify({'error': 'Checkerboard calibration at this camera resolution is required for 3D export.'}), 409
+    if rect_left.shape[1] <= params['numDisparities'] + params['blockSize']:
+        return jsonify({'error': 'The selected camera resolution is too narrow for these settings.'}), 400
+    try:
+        disparity_map, _ = compute_disparity(
+            cv2.cvtColor(rect_left, cv2.COLOR_BGR2GRAY), cv2.cvtColor(rect_right, cv2.COLOR_BGR2GRAY), params
+        )
+        points, colors, mask = stereo_extras.reproject(disparity_map, calibration['q'], rect_left, params['minDisparity'])
+        if np.count_nonzero(mask) < 100:
+            return jsonify({'error': 'Too few valid depth points. Improve lighting and scene texture, then retry.'}), 422
+        if output_format == 'points':
+            payload = stereo_extras.ply_point_cloud(points[mask], colors[mask])
+            name = 'stereo-point-cloud.ply'
+        elif mesh_method == 'poisson':
+            try:
+                payload = stereo_extras.ply_mesh(*stereo_extras.poisson_mesh(points[mask], colors[mask]))
+            except ImportError:
+                return jsonify({'error': 'Poisson reconstruction needs Open3D. Build with INSTALL_OPEN3D=1 or use the grid mesh.'}), 501
+            name = 'stereo-poisson-mesh.ply'
+        else:
+            payload = stereo_extras.ply_mesh(*stereo_extras.grid_mesh(points, colors, mask))
+            name = 'stereo-mesh.ply'
+    except Exception:
+        app.logger.exception('3D export failed')
+        return jsonify({'error': '3D export failed; see container logs.'}), 500
+    return send_file(
+        BytesIO(payload),
+        mimetype='application/octet-stream',
+        as_attachment=True,
+        download_name=name,
+        max_age=0,
+    )
 
 
 @app.route('/api/camera-settings', methods=['GET', 'POST'])
@@ -1227,6 +1739,7 @@ def disparity():
         frame_left, frame_right, params,
         measurement_point=measurement_point,
         pose_options=None if is_preview else current_pose_settings,
+        live=not is_preview,
     )
     if isinstance(result, tuple):
         return result

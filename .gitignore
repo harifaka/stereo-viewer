@@ -66,6 +66,8 @@ instance/
 .webassets-cache
 camera-config/
 config/cameras.json
+models/
+*.pt
 
 # Scrapy stuff:
 .scrapy

@@ -84,6 +84,11 @@
         .tap-status { flex: 1 1 280px; margin: 0; color: var(--muted); font-size: 10px; }
         .tap-status[data-state="error"] { color: var(--danger); }
         #tapCameraTargets { display: flex; flex-wrap: wrap; gap: 10px; }
+        .tap-field { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+        .tap-field select, .tap-field input { min-height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: #171a18; }
+        .tap-output { padding: 0 12px 12px; }
+        .tap-output img { display: block; width: 100%; max-height: 72vh; object-fit: contain; border: 1px solid var(--line); border-radius: 4px; background: #111412; }
+        .tap-output img[hidden] { display: none; }
         .camera-settings-dialog { width: min(760px, calc(100vw - 28px)); max-height: 90vh; padding: 0; overflow: auto; border: 1px solid #536052; border-radius: 6px; color: var(--text); background: var(--panel); }
         .camera-settings-dialog::backdrop { background: #080a08c9; backdrop-filter: blur(3px); }
         .camera-settings-form { padding: 22px; }
@@ -225,14 +230,24 @@
                 </div>
             </details>
             <details class="tap-panel">
-                <summary data-copy="tapTitle">TAP-Net temporal tracking (preparation)</summary>
+                <summary data-copy="tapTitle">TAP-Net temporal tracking</summary>
                 <form class="tap-content" id="tapForm">
-                    <label class="tap-option"><input id="tapEnabled" type="checkbox"><span data-copy="tapEnable">Enable TAP-Net tracking configuration</span></label>
+                    <label class="tap-option"><input id="tapEnabled" type="checkbox"><span data-copy="tapEnable">Enable live temporal point tracking</span></label>
                     <span id="tapCameraTargets"></span>
                     <label class="tap-option"><input id="tapComposite" type="checkbox"><span data-copy="composite">Composite output</span></label>
-                    <p class="tap-status" id="tapStatus" role="status" aria-live="polite" data-copy="tapUnavailable">Settings are preparatory only; TAP-Net inference is not installed.</p>
+                    <label class="tap-field"><span data-copy="tapBackend">Tracker</span>
+                        <select id="tapBackend">
+                            <option value="auto" data-copy="tapBackendAuto">Automatic (TAPIR if installed)</option>
+                            <option value="tapir">TAPIR (TAP-Net)</option>
+                            <option value="lucas-kanade">Lucas-Kanade</option>
+                        </select>
+                    </label>
+                    <label class="tap-field"><span data-copy="tapMaxPoints">Points per target</span><input id="tapMaxPoints" type="number" min="8" max="200" step="1" value="80"></label>
+                    <label class="tap-field"><span data-copy="tapHoldFrames">Occlusion hold (frames)</span><input id="tapHoldFrames" type="number" min="0" max="60" step="1" value="12"></label>
+                    <p class="tap-status" id="tapStatus" role="status" aria-live="polite"></p>
                     <button class="action-button" id="saveTapSettings" type="submit" data-copy="saveTap">Save tracking targets</button>
                 </form>
+                <div class="tap-output"><img id="tapOutput" alt="Temporal point tracking output" hidden></div>
             </details>
         </main>
     </div>
@@ -261,10 +276,16 @@
                 awaiting: 'Awaiting camera', inactive: 'Inactive', starting: 'Starting…', error: 'Camera error',
                 browserPermission: 'Allow camera access in your browser, then reconnect.',
                 browserMissing: 'No browser camera is available at index {index}.',
-                tapTitle: 'TAP-Net temporal tracking (preparation)', tapEnable: 'Enable TAP-Net tracking configuration',
+                tapTitle: 'TAP-Net temporal tracking', tapEnable: 'Enable live temporal point tracking',
                 composite: 'Composite output', saveTap: 'Save tracking targets',
-                tapUnavailable: 'Settings are preparatory only; TAP-Net inference is not installed.',
-                tapSaved: 'Tracking targets saved. TAP-Net inference is not installed or running.',
+                tapBackend: 'Tracker', tapBackendAuto: 'Automatic (TAPIR if installed)',
+                tapMaxPoints: 'Points per target', tapHoldFrames: 'Occlusion hold (frames)',
+                tapSaved: 'Tracking targets saved.',
+                tapDisabled: 'Tracking is off. Enable it, choose targets, and save.',
+                tapWaiting: 'Connect the cameras to start tracking.',
+                tapLive: '{backend}: {targets}',
+                tapTargetSummary: '{label}: {visible} visible / {predicted} predicted',
+                tapTapir: 'TAPIR: {message}',
                 tapLoadError: 'Could not load TAP-Net tracking settings: {message}',
                 tapSaveError: 'Could not save TAP-Net tracking settings: {message}',
                 tapCamera: 'Track camera {slot}'
@@ -291,10 +312,16 @@
                 awaiting: 'Várakozás a kamerára', inactive: 'Inaktív', starting: 'Indítás…', error: 'Kamerahiba',
                 browserPermission: 'Engedélyezd a kamerahasználatot a böngészőben, majd csatlakozz újra.',
                 browserMissing: 'Nem található böngészőkamera ezen az indexen: {index}.',
-                tapTitle: 'TAP-Net időbeli követés (előkészítés)', tapEnable: 'TAP-Net követési beállítás engedélyezése',
+                tapTitle: 'TAP-Net időbeli követés', tapEnable: 'Élő időbeli pontkövetés engedélyezése',
                 composite: 'Kompozit kimenet', saveTap: 'Követési célok mentése',
-                tapUnavailable: 'A beállítások csak előkészítő jellegűek; a TAP-Net követés nincs telepítve.',
-                tapSaved: 'A követési célok mentve. A TAP-Net követés nincs telepítve vagy elindítva.',
+                tapBackend: 'Követő', tapBackendAuto: 'Automatikus (TAPIR, ha telepítve van)',
+                tapMaxPoints: 'Pontok célonként', tapHoldFrames: 'Kitakarás áthidalása (képkocka)',
+                tapSaved: 'A követési célok mentve.',
+                tapDisabled: 'A követés ki van kapcsolva. Engedélyezd, válassz célokat, és mentsd.',
+                tapWaiting: 'Csatlakoztasd a kamerákat a követés indításához.',
+                tapLive: '{backend}: {targets}',
+                tapTargetSummary: '{label}: {visible} látható / {predicted} becsült',
+                tapTapir: 'TAPIR: {message}',
                 tapLoadError: 'A TAP-Net beállításai nem tölthetők be: {message}',
                 tapSaveError: 'A TAP-Net beállításai nem menthetők: {message}',
                 tapCamera: 'A(z) {slot}. kamera követése'
@@ -540,6 +567,7 @@
                 toggleButton.textContent = tr('disconnect');
                 setStatus(tr('connected'), 'live');
                 startProcessing();
+                startTapStream();
                 if (runningSource === 'docker') {
                     pollTimer = window.setInterval(() => {
                         updateCameraStatus().catch(error => setStatus(error.message, 'error'));
@@ -559,6 +587,7 @@
         async function disconnectCameras() {
             capturing = false;
             stopProcessing();
+            stopTapStream();
             window.clearInterval(pollTimer);
             pollTimer = null;
             cameraCards.forEach(item => {
@@ -612,10 +641,71 @@
 
         let lastTapSettings = null;
 
+        const tapOutput = document.getElementById('tapOutput');
+        let tapStatusTimer = null;
+        let tapUploadTimer = null;
+
+        function tapActive() {
+            return capturing && Boolean(lastTapSettings?.enabled);
+        }
+
+        function describeTapAvailability(settings) {
+            const tapStatus = document.getElementById('tapStatus');
+            tapStatus.dataset.state = '';
+            if (!settings.enabled) tapStatus.textContent = tr('tapDisabled');
+            else if (!capturing) tapStatus.textContent = tr('tapWaiting');
+            if (settings.tapirMessage) tapStatus.textContent += ` ${tr('tapTapir', { message: settings.tapirMessage })}`;
+        }
+
+        async function pollTapStatus() {
+            const response = await fetch(`/api/tap/status?clientId=${encodeURIComponent(cameraClientId)}`);
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Request failed.');
+            const targets = (result.targets || []).map(target => tr('tapTargetSummary', target)).join(', ');
+            const tapStatus = document.getElementById('tapStatus');
+            tapStatus.dataset.state = result.ok ? '' : 'error';
+            tapStatus.textContent = result.ok
+                ? `${tr('tapLive', { backend: result.backend, targets })} ${result.message || ''}`.trim()
+                : result.message || '';
+        }
+
+        function stopTapStream() {
+            window.clearInterval(tapStatusTimer);
+            window.clearInterval(tapUploadTimer);
+            tapStatusTimer = null;
+            tapUploadTimer = null;
+            tapOutput.removeAttribute('src');
+            tapOutput.hidden = true;
+        }
+
+        function startTapStream() {
+            stopTapStream();
+            if (lastTapSettings) describeTapAvailability(lastTapSettings);
+            if (!tapActive()) return;
+            tapOutput.hidden = false;
+            tapOutput.src = `/api/tap/output?clientId=${encodeURIComponent(cameraClientId)}&source=${runningSource}&t=${Date.now()}`;
+            if (runningSource === 'browser') {
+                tapUploadTimer = window.setInterval(() => {
+                    if (uploadTimer) return;
+                    uploadBrowserFrames().catch(error => {
+                        document.getElementById('tapStatus').textContent = error.message;
+                    });
+                }, 150);
+            }
+            tapStatusTimer = window.setInterval(() => {
+                pollTapStatus().catch(error => {
+                    document.getElementById('tapStatus').textContent = error.message;
+                });
+            }, 1000);
+        }
+
         function renderTapTargets(settings) {
             lastTapSettings = settings;
             document.getElementById('tapEnabled').checked = settings.enabled;
             document.getElementById('tapComposite').checked = settings.composite;
+            document.getElementById('tapBackend').value = settings.backend;
+            document.getElementById('tapMaxPoints').value = settings.maxPoints;
+            document.getElementById('tapHoldFrames').value = settings.holdFrames;
             const targetContainer = document.getElementById('tapCameraTargets');
             targetContainer.replaceChildren();
             configuredCameras.forEach(camera => {
@@ -639,6 +729,7 @@
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || 'Request failed.');
             renderTapTargets(result);
+            describeTapAvailability(result);
         }
 
         document.getElementById('tapForm').addEventListener('submit', async event => {
@@ -655,13 +746,17 @@
                         enabled: document.getElementById('tapEnabled').checked,
                         cameraSlots: [...document.querySelectorAll('input[name="cameraSlots"]:checked')]
                             .map(input => Number(input.value)),
-                        composite: document.getElementById('tapComposite').checked
+                        composite: document.getElementById('tapComposite').checked,
+                        backend: document.getElementById('tapBackend').value,
+                        maxPoints: Number(document.getElementById('tapMaxPoints').value),
+                        holdFrames: Number(document.getElementById('tapHoldFrames').value)
                     })
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error || 'Request failed.');
                 renderTapTargets(result);
-                tapStatus.textContent = tr('tapSaved');
+                startTapStream();
+                tapStatus.textContent = `${tr('tapSaved')} ${tapStatus.textContent}`;
             } catch (error) {
                 tapStatus.textContent = tr('tapSaveError', { message: error.message });
                 tapStatus.dataset.state = 'error';

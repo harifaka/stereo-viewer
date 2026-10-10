@@ -12,30 +12,34 @@ class TapSettingsApiTests(unittest.TestCase):
         with stereo_app.tap_settings_lock:
             stereo_app.tap_settings = self.original_settings
 
-    def test_saves_camera_and_composite_targets_as_configuration_only(self):
+    def test_saves_camera_and_composite_targets_for_live_tracking(self):
         response = self.client.post(
             '/api/tap-settings',
-            json={'enabled': True, 'cameraSlots': [1, 3], 'composite': True},
+            json={'enabled': True, 'cameraSlots': [1, 3], 'composite': True, 'backend': 'lucas-kanade', 'maxPoints': 40},
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.get_json(),
-            {
-                'enabled': True,
-                'cameraSlots': [1, 3],
-                'composite': True,
-                'available': False,
-                'status': 'configuration_only',
-            },
-        )
+        result = response.get_json()
+        self.assertEqual(result['cameraSlots'], [1, 3])
+        self.assertTrue(result['composite'])
+        self.assertEqual(result['backend'], 'lucas-kanade')
+        self.assertEqual(result['maxPoints'], 40)
+        self.assertTrue(result['available'])
+        self.assertEqual(result['status'], 'tracking')
+        self.assertIn('tapirAvailable', result)
 
-    def test_get_reports_tracking_as_not_installed(self):
+    def test_get_reports_tracking_availability(self):
         response = self.client.get('/api/tap-settings')
 
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.get_json()['available'])
-        self.assertEqual(response.get_json()['status'], 'configuration_only')
+        self.assertTrue(response.get_json()['available'])
+        self.assertIn(response.get_json()['status'], ('tracking', 'disabled'))
+
+    def test_rejects_unknown_backend_and_bad_point_count(self):
+        for payload in ({'backend': 'magic'}, {'maxPoints': 2}, {'holdFrames': 99}):
+            with self.subTest(payload=payload):
+                response = self.client.post('/api/tap-settings', json=payload)
+                self.assertEqual(response.status_code, 400)
 
     def test_rejects_duplicate_or_out_of_range_camera_slots(self):
         for camera_slots in ([1, 1], [0], [5], [True]):

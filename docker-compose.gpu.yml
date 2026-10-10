@@ -1,0 +1,19 @@
+# NVIDIA GPU override. Requires the NVIDIA Container Toolkit (Linux) or
+# Docker Desktop with WSL2 GPU support (Windows).
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+services:
+  stereo_app:
+    build:
+      args:
+        TORCH_VARIANT: cu128
+        INSTALL_TAPNET: "1"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

@@ -42,9 +42,11 @@ Choose a processing mode under the grid: **Preview**, **Multi-view stereo**, **T
 
 Multi-view stereo matches ORB or SIFT features against a reference camera, draws inlier matches and epipolar lines, and triangulates a sparse 3D reference. It is not a dense mesh. Thermal fusion estimates a homography and overlays a translucent thermal colormap on the RGB view, with an optional picture-in-picture. Thermal stereo applies CLAHE and then StereoSGBM; the disparity colors follow the stereo-page palette. Metric distance still requires checkerboard calibration on the stereo page. Visual SLAM draws optical-flow vectors and a relative path from the selected odometry camera. Processing settings, flow state, and calibration are held in memory and reset when the app restarts.
 
-**ChArUco global calibration** prints or displays a board from **Open board**. Show it to at least two cameras, capture four or more varied views, and choose **Calibrate cameras**. The reference camera becomes the origin of one coordinate system. OpenCV ArUco support comes from `opencv-contrib-python`. Poisson surface reconstruction and network camera streams are not implemented.
+**ChArUco global calibration** prints or displays a board from **Open board**. Show it to at least two cameras, capture four or more varied views, and choose **Calibrate cameras**. The reference camera becomes the origin of one coordinate system. OpenCV ArUco support comes from `opencv-contrib-python`. Network camera streams (RTSP, SRT, NDI, WebRTC) are not implemented.
 
-The **TAP-Net temporal tracking** section saves preparatory target selections for individual camera inputs and the composite output. The TAP-Net model/runtime is not integrated yet, so saving these settings does not run tracking. Configuration is held by the running Flask process and resets when it restarts.
+**TAP-Net temporal tracking** runs live point tracking on the selected camera inputs and on the composite output, a tiled mosaic of every active camera. Enable it, choose the targets, the tracker, the number of points per target, and how many frames a hidden point is kept alive, then choose **Save tracking targets**. With the cameras connected, the tracked output appears under the form. Green points are visible. Orange rings are points predicted through an occlusion from their last velocity. The status line reports visible and predicted points per target and which tracker is active. In browser mode, frames are uploaded while tracking is enabled, even in Preview mode.
+
+The tracker can be **Automatic**, **TAPIR (TAP-Net)**, or **Lucas-Kanade**. TAPIR is Google DeepMind's TAP-Net-family model. It runs over a sliding window of the last eight frames at 256 × 256, and uses the model's occlusion and uncertainty outputs to decide visibility. Automatic uses TAPIR when it is installed and its checkpoint is present; otherwise it falls back to pyramidal Lucas-Kanade optical flow with a forward-backward consistency check. If TAPIR fails while running, tracking switches to Lucas-Kanade and the status line shows why. Settings and tracks are held in memory and reset when the app restarts. See [TAP-Net / TAPIR setup](#tap-net--tapir-setup).
 
 ### Camera Hardware Controls
 
@@ -60,7 +62,7 @@ Connect both cameras, then open **Detailed settings** > **Camera calibration**. 
 
 For target-free setup, choose **Feature alignment (no target)** instead. Keep the stereo rig fixed, point both cameras at the same detailed scene, and choose **Align from current pair**. OpenCV enhances local contrast with CLAHE, matches SIFT features, rejects inconsistent correspondences with RANSAC, then estimates uncalibrated stereo rectification. This can align the images and provide relative disparity without a checkerboard; it cannot determine camera intrinsics or real-world scale, so metric point-distance measurements remain unavailable. It needs shared textured areas and enough visible detail; CLAHE may help dim images, but cannot recover detail lost to darkness, blur, or noise. Keep the cameras fixed and recalibrate if they move.
 
-Feature matching currently runs on the CPU. The `opencv-python-headless` wheel used by this project does not include CUDA support, and enabling Docker's NVIDIA runtime alone does not make these OpenCV operations use the GPU. GPU acceleration would require a CUDA-enabled OpenCV build and compatible container/runtime configuration.
+Feature matching runs on the CPU. The `opencv-contrib-python` wheel used by this project does not include CUDA support, and enabling Docker's NVIDIA runtime alone does not make OpenCV operations use the GPU. See [GPU acceleration](#gpu-acceleration) for what the GPU build does accelerate.
 
 Start camera capture and open calibration to see both live camera views and the live stereo disparity composite. Keep the complete, flat checkerboard visible in both cameras. If automatic detection misses it, drag a box around the full board in each camera preview and retry; the app searches the full image as a fallback. Move and tilt the board through varied positions and distances, capturing each useful pose with **Capture board view**. The app needs eight accepted paired views before it estimates both cameras, stereo geometry, and rectification. Small fixed height or angle differences between cameras are handled by stereo calibration; keep the camera rig fixed while collecting views and during later measurement. Calibration applies to the captured camera resolution; recalibrate if the resolution changes. Captured views and calibration are held in app memory and are cleared when the app container restarts. **Reset calibration** clears the current model and captured views.
 
@@ -72,6 +74,84 @@ Open **Detailed settings** > **Pose tracking** to enable YOLOv8 Nano Pose, choos
 
 Pose landmarks provide 2D tracking without calibration. Metric 3D joint coordinates and distance labels require checkerboard stereo calibration at the current camera resolution; feature alignment alone does not provide real-world scale. Each landmark uses a small local disparity neighborhood, so joints on occluded, textureless, or mismatched regions may not have a 3D estimate. Right-camera landmarks are transformed into rectified stereo coordinates before depth lookup. This tracking output is a visual estimate and should not be used as a safety-rated measurement or control input.
 
+### Output Views and Live MJPEG Stream
+
+The selector in the **Disparity map** header switches the processed view and applies it immediately:
+
+- **Disparity** is the color-coded StereoSGBM map.
+- **Anaglyph 3D** combines the left camera's red channel with the right camera's green and blue channels for red-cyan glasses. It uses rectified frames when a calibration matches the resolution.
+- **Depth blur** keeps pixels whose disparity is above the foreground threshold sharp and blurs the rest, using a feathered mask. Disparity holes count as background.
+
+Tune the blur threshold and strength in **Detailed settings** > **Depth tools**. **Live MJPEG** opens `/api/stereo/stream`, which re-broadcasts whatever the stereo monitor is currently producing to any number of viewers (browser tab, OBS browser source, VLC). It updates only while a stereo monitor tab is connected and processing.
+
+### Object Detection with Distance
+
+In **Depth tools** > **Object detection**, enable YOLOv8 Nano object detection, set the confidence, and choose to display boxes on the left camera, the disparity view, or both. The model (`yolov8n.pt`) downloads on first use. Each box is mapped into rectified coordinates, and the median disparity of its central 40% gives the label, such as `person - 2.40 m`. Metric distance requires checkerboard calibration at the current resolution; otherwise boxes show the class and confidence only. Detection runs on the GPU when CUDA PyTorch is installed, and on the CPU otherwise, which reduces the frame rate.
+
+### Temporal Tracking, Depth Smoothing, and Drift Correction
+
+**Depth tools** > **Temporal tracking (TAP-Net)** stabilizes the live depth view:
+
+- **Temporal depth smoothing** blends each new disparity value with its recent history and fills short holes from the last valid value, for up to **Occlusion hold** frames. Pixels where the image changed are not blended, so moving objects do not leave trails.
+- **Track the measured point** makes the measurement marker follow the clicked surface with the selected tracker (TAPIR or Lucas-Kanade). It smooths the reported distance and keeps showing the last reliable value, marked *held through occlusion*, while the point is briefly hidden. Click again to choose a new point.
+- **Markerless drift auto-correction** detects vertical row misalignment between the rectified cameras from ORB stereo matches, for example after a bump or thermal expansion. It applies a gradual offset, scale, and roll correction to the right image. The readout under the depth view shows the remaining row error and the applied correction. This works without a checkerboard and also on uncalibrated pairs. It does not re-estimate the metric baseline, so recalibrate after a large physical change.
+
+Changing these settings resets the temporal state. The preview in Detailed settings and the measurement API stay unfiltered.
+
+### 3D Point Cloud and Mesh Export
+
+With checkerboard calibration active at the current resolution, **Export point cloud (.ply)** reprojects the current frame pair with `cv2.reprojectImageTo3D` and the Q matrix, then downloads a binary PLY of colored points. **Export mesh (.ply)** downloads a triangle mesh instead:
+
+- **Depth grid mesh** (built in) connects neighbouring depth pixels and skips faces across depth jumps over 5%.
+- **Poisson (Open3D)** runs Poisson surface reconstruction for a watertight surface. It requires building with `INSTALL_OPEN3D=1`.
+
+Coordinates are in metres in the OpenCV left-camera frame (X right, Y down, Z forward). Points farther than 15 m are dropped. Blender, MeshLab, CloudCompare, Unity, and Unreal can import the files; you may need to flip the Y axis.
+
 StereoSGBM calculates relative disparity. Stereo rectification corrects lens distortion and camera alignment using the calibration, while the known checkerboard scale and measured baseline allow the app to estimate metric distance. Matcher tuning alone cannot correct a moving rig, unsynchronized cameras, poor calibration views, or an incorrectly measured target.
 
 If no cameras appear, grant the site camera permission and reload the page.
+
+## GPU Acceleration
+
+The default image is CPU-only. On a machine with an NVIDIA GPU and the NVIDIA Container Toolkit (or Docker Desktop with WSL2 GPU support), build with the GPU override:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+This installs CUDA PyTorch (`TORCH_VARIANT=cu128`) and TAPIR, and reserves the GPU for the container. YOLOv8 pose, object detection, and TAPIR then run on `cuda:0` automatically. **Depth tools** shows the active devices, and so does `GET /api/acceleration`.
+
+StereoSGBM stays on the CPU because the pip OpenCV wheel has no CUDA. If you replace it with a CUDA-enabled OpenCV build, the app detects `cv2.cuda` and uses `cv2.cuda.createStereoSGM` with GPU matrices when the disparity range is 64, 128, or 256. It falls back to the CPU for other ranges or on error. The processing readout shows `CPU` or `CUDA` for each frame.
+
+Build arguments:
+
+| Argument | Default | Effect |
+| --- | --- | --- |
+| `TORCH_VARIANT` | `cpu` | PyTorch wheel variant, for example `cu128` |
+| `INSTALL_TAPNET` | `0` | `1` installs the TAPIR PyTorch code (`--no-deps`, plus `einshape` and `dm-tree`) |
+| `INSTALL_OPEN3D` | `0` | `1` installs Open3D for Poisson mesh export |
+
+## TAP-Net / TAPIR Setup
+
+1. Build with `INSTALL_TAPNET=1`. The GPU override sets it already; for CPU use `docker compose build --build-arg INSTALL_TAPNET=1`.
+2. Download a PyTorch TAPIR or BootsTAPIR checkpoint (`.pt`) from the [google-deepmind/tapnet](https://github.com/google-deepmind/tapnet) repository's checkpoint list.
+3. Save it as `./models/tapir_checkpoint.pt`. Compose mounts `./models` at `/app/models`, and `TAPNET_CHECKPOINT` points at the file.
+4. Choose **Automatic** or **TAPIR** as the tracker. The model loads on first use.
+
+TAPIR is accurate through occlusions but heavy: on a CPU, expect well under one update per second per target. Use a GPU, or fewer targets and points, for live use. Without a checkpoint, all tracking features work with the Lucas-Kanade fallback.
+
+## API Additions
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET/POST /api/output-settings` | Output view (`disparity`, `anaglyph`, `bokeh`), `bokehThreshold` (0.05-0.95 of the disparity range), `bokehBlur` (odd, 5-75) |
+| `GET/POST /api/detection-settings` | `enabled`, `view` (`left`, `composite`, `both`), `confidence` |
+| `GET/POST /api/temporal-settings` | `enabled`, `smoothing`, `holdFrames`, `trackMeasurement`, `autoCorrect`, `backend`; GET also reports the drift status |
+| `GET/POST /api/tap-settings` | Multi-camera tracking targets, `backend`, `maxPoints`, `holdFrames` |
+| `GET /api/tap/output?clientId=&source=` | MJPEG stream of the tracked targets |
+| `GET /api/tap/status?clientId=` | Per-target visible and predicted point counts |
+| `GET /api/stereo/stream` | MJPEG re-broadcast of the stereo output |
+| `POST /api/pointcloud` | `left`, `right` images; `format=points\|mesh`, `meshMethod=grid\|poisson`; returns PLY |
+| `GET /api/acceleration` | CUDA/OpenCV/PyTorch/Open3D availability |
+
+`/api/disparity` responses also carry `X-Detection-Data`, `X-Temporal-Data`, `X-Stereo-Backend`, and `X-Output-View` headers. `X-Measurement` includes the tracked `point`.
