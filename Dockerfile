@@ -9,8 +9,9 @@ ARG TORCH_VARIANT=cpu
 RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/${TORCH_VARIANT} \
     torch==2.8.0+${TORCH_VARIANT} torchvision==0.23.0+${TORCH_VARIANT}
 RUN pip install --no-cache-dir -r requirements.txt \
-    && (pip uninstall -y opencv-python opencv-python-headless || true) \
-    && pip install --no-cache-dir opencv-contrib-python==4.8.1.78
+    && pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless \
+    && pip install --no-cache-dir --no-deps opencv-contrib-python==4.8.1.78 \
+    && python -c "import importlib.metadata as m; names = {d.metadata['Name'].lower() for d in m.distributions()}; assert {n for n in names if n.startswith('opencv-')} == {'opencv-contrib-python'}; import cv2; assert cv2.__version__ == '4.8.1'; assert all(hasattr(cv2, name) for name in ('COLORMAP_TURBO', 'TERM_CRITERIA_EPS'))"
 # TAPIR (Google DeepMind TAP-Net family) for temporal point tracking. --no-deps avoids the
 # JAX stack and keeps opencv-contrib-python; the PyTorch model only needs einshape and dm-tree.
 ARG INSTALL_TAPNET=0

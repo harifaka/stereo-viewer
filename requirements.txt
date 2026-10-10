@@ -1,4 +1,5 @@
 Flask==3.0.0
+# Ultralytics may pull opencv-python; the Dockerfile replaces all variants with this package.
 opencv-contrib-python==4.8.1.78
 numpy==1.26.2
 reportlab==4.4.4

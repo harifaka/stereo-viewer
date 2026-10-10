@@ -15,7 +15,7 @@ TAPIR_WINDOW = 8
 LK_PARAMS = dict(
     winSize=(21, 21),
     maxLevel=3,
-    criteria=(cv2.TermCriteria_EPS | cv2.TermCriteria_COUNT, 30, 0.01),
+    criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01),
 )
 FORWARD_BACKWARD_LIMIT_PX = 1.5
 TRAIL_LENGTH = 12

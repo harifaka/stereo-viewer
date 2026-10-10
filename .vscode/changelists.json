@@ -3,7 +3,8 @@
     {
       "name": "Default",
       "files": [
-        "temporal.py"
+        "temporal.py",
+        ".vscode/changelists.json"
       ]
     }
   ],
