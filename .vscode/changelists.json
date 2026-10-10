@@ -3,7 +3,8 @@
     {
       "name": "Default",
       "files": [
-        "docker-compose.gpu.yml"
+        "run.ps1",
+        ".vscode/changelists.json"
       ]
     }
   ],

@@ -13,7 +13,7 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw 'Docker was not found. Install/start Docker Desktop and try again.'
 }
 
-Write-Host 'Reading connected USB devices from usbipd...'
+Write-Host 'Reading connected USB devices from usbipd...' -ForegroundColor DarkGreen
 $listing = @(& usbipd list 2>&1)
 if ($LASTEXITCODE -ne 0) {
     throw "usbipd list failed: $($listing -join [Environment]::NewLine)"
@@ -82,10 +82,17 @@ if ($connectedDevices.Count -eq 0) {
             Write-Host "Bus ID $($device.BusId) is already shared."
         }
 
+        $oldEA = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
+
         $attachOutput = @(& usbipd attach --wsl --busid $device.BusId --auto-attach 2>&1)
         $attachExitCode = $LASTEXITCODE
-        if ($attachExitCode -ne 0) {
-            $attachMessage = $attachOutput -join [Environment]::NewLine
+
+        $ErrorActionPreference = $oldEA
+
+        $attachMessage = $attachOutput -join [Environment]::NewLine
+        
+        if ($attachExitCode -ne 0 -and $attachMessage -notmatch '(?i)usbipd:\s+info:') {
             if ($attachMessage -match '(?i)already\s+attached') {
                 Write-Host "Bus ID $($device.BusId) is already attached to WSL."
             } else {
@@ -99,7 +106,7 @@ if ($connectedDevices.Count -eq 0) {
 
 Push-Location $projectDirectory
 try {
-    Write-Host 'Building and starting Stereo Lab...'
+    Write-Host 'Building and starting Stereo Lab...'  -ForegroundColor DarkGreen
     & docker compose `
         -f (Join-Path $projectDirectory 'docker-compose.yml') `
         -f (Join-Path $projectDirectory 'docker-compose.gpu.yml') `
